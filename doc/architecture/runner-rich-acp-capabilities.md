@@ -77,7 +77,7 @@ credentials, fresh account/key evidence, one paid case at a time, and usage
 monitoring. The key's $5 reservation is counted once within the combined $100
 campaign budget. Native price estimates are never substituted for provider bills.
 
-The [Pi capability inventory](runner-pi-capabilities.md#pi-10-candidate-2026-10-02-profile-v12)
+The [Pi capability inventory](runner-pi-capabilities.md#historical-pi-10-candidate-2026-10-02-profile-v12)
 records Pi 1.0's native interfaces, wrapper changes, and unused capabilities.
 The comparison below remains the supported-surface map; older paid observations
 retain their named historical profiles. Current Pi 1.0 paid Product, Runner
@@ -275,7 +275,7 @@ The [prior evidence checkpoint](runner-rich-acp-validation-2026-09-30-current.js
 | Pi v9 | Obtain an enforced provider spending bound, then run the unchanged required local/Daytona cases against the exact model and final runtime. Historical controls, question and hello passes do not qualify v9. |
 | All providers | Bind every required case to exact controller/runtime/profile and platform evidence, retain failures, complete source/dependency/pack end audits and owned cleanup, and reconcile actual spend within the $100 ceiling. CI and packaging do not substitute for this paid evidence; native Cursor/Copilot per-run USD remains unknown. |
 
-The field inventories and [prioritized follow-ups](#explicit-gaps-and-follow-ups) distinguish native SDK/RPC capability, ACP exposure and Paperclip projection. Image inputs, structured tool diffs/media/raw arguments, secondary locations and typed exit codes remain partial or unused in the common path. Cursor's richer child details and discovery/configuration fields, Copilot's session-scoped files/assets and uncorrelated native notices, and Pi's queue-delivery/configuration fields remain explicit follow-ups. These optional surfaces are not silently claimed as supported or treated as new blockers for unrelated declared cases. Copilot native steering/fork/ask-user APIs do not imply ACP responders; Pi native fork/clone/export likewise have no mapped runner controls. Pi confirm reports `negative_or_cancelled` because No and dismissal are indistinguishable; accepted empty or whitespace-only input/editor responses are not representable by the current canonical form.
+The field inventories and [prioritized follow-ups](#historical-gaps-and-follow-ups--october-2-2026) distinguish native SDK/RPC capability, ACP exposure and Paperclip projection. Image inputs, structured tool diffs/media/raw arguments, secondary locations and typed exit codes remain partial or unused in the common path. Cursor's richer child details and discovery/configuration fields, Copilot's session-scoped files/assets and uncorrelated native notices, and Pi's queue-delivery/configuration fields remain explicit follow-ups. These optional surfaces are not silently claimed as supported or treated as new blockers for unrelated declared cases. Copilot native steering/fork/ask-user APIs do not imply ACP responders; Pi native fork/clone/export likewise have no mapped runner controls. Pi confirm reports `negative_or_cancelled` because No and dismissal are indistinguishable; accepted empty or whitespace-only input/editor responses are not representable by the current canonical form.
 
 | Retained paid observation | Outcome and limit |
 | --- | --- |
