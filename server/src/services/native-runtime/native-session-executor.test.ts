@@ -6944,14 +6944,14 @@ describe("native warm session supervision", () => {
     try {
       await executePaperclipNativeSession({ db: leaseDb(warmExecution), execution: warmExecution,
         runnerInstanceId: identity, runnerExecutionTarget: { kind: "remote", transport: "sandbox", environmentId: identity, remoteCwd: `/tmp/${identity}` },
-        instructionWorkingCopy: { runId: identity, preparationKey: "same-preparation", hasChanges: () => copies.hasChanges(row), collectStopped } });
+        instructionWorkingCopy: { runId: identity, root: localRoot, preparationKey: "same-preparation", hasChanges: () => copies.hasChanges(row), collectStopped } });
       expect(close).not.toHaveBeenCalled();
       expect(order).toEqual([]);
       expect(await readFile(join(localRoot, "AGENTS.md"), "utf8")).toContain("registered");
       const second = { ...warmExecution, binding: { ...warmExecution.binding, runId: `${identity}-second`,
         ...(ending === "projectless" ? { executionWorkspaceId: `${identity}-second` } : {}) } };
       expect(nativeSessionWorkspaceScope(second)).toEqual(nativeSessionWorkspaceScope(warmExecution));
-      const currentCopy = { runId: second.binding.runId, preparationKey: "same-preparation", hasChanges: () => copies.hasChanges(row), collectStopped };
+      const currentCopy = { runId: second.binding.runId, root: localRoot, preparationKey: "same-preparation", hasChanges: () => copies.hasChanges(row), collectStopped };
       if (ending === "projectless") {
         const adopt = vi.fn(async () => currentCopy);
         for (const changed of [
@@ -7000,14 +7000,14 @@ describe("native warm session supervision", () => {
     }
   });
 
-  it.each(["final-config", "late-edit", "close-failure", "abandon", "concurrent", "foreign-company", "foreign-workspace"])("fences owned instruction preparation: %s", async scenario => {
+  it.each(["final-config", "changed-root", "late-edit", "close-failure", "abandon", "concurrent", "foreign-company", "foreign-workspace"])("fences owned instruction preparation: %s", async scenario => {
     const identity = `warm-copy-${scenario}`;
     const order: string[] = [];
     let allowClose = scenario !== "close-failure";
     const session = { close: vi.fn(async () => { order.push("close"); if (!allowClose) throw new Error("retirement unconfirmed"); }) };
     const retirementFailed = vi.fn(async () => {});
     let lateEdit = false;
-    const copy = { runId: identity, preparationKey: "key", hasChanges: async () => lateEdit,
+    const copy = { runId: identity, root: `/tmp/${identity}/instructions`, preparationKey: "key", hasChanges: async () => lateEdit,
       collectStopped: vi.fn(async () => { order.push("collect"); }), retirementFailed };
     const first = { ...execution, binding: { ...execution.binding, runId: identity, executionWorkspaceId: `${identity}-workspace` },
       session: { ...execution.session, normalizedSessionId: identity, lifecyclePolicy: { mode: "warm" as const, idleTimeoutMs: 60_000 } },
@@ -7020,7 +7020,8 @@ describe("native warm session supervision", () => {
         driverKind: "test", driverVersion: "1", nativeEventCount: 1, highestContiguousSourceSeq: 1, usage: null };
     });
     const second = { ...first, binding: { ...first.binding, runId: `${identity}-second` } };
-    const current = { ...copy, runId: second.binding.runId };
+    const current = { ...copy, runId: second.binding.runId,
+      ...(scenario === "changed-root" ? { root: `/tmp/${identity}/other-instructions` } : {}) };
     const adopt = vi.fn(async () => current);
     const claim = { priorExecution: first, companyId: first.binding.companyId, agentId: first.binding.agentId,
       executionWorkspaceId: first.binding.executionWorkspaceId, workspace: first.workspace, environmentId: identity,
@@ -7034,9 +7035,9 @@ describe("native warm session supervision", () => {
       } else {
         const release = await claimWarmNativeInstructionCopy(claim);
         if (scenario === "concurrent") await expect(claimWarmNativeInstructionCopy({ ...claim, runId: "competitor" })).rejects.toThrow("busy");
-        if (scenario === "final-config" || scenario === "late-edit") {
+        if (scenario === "final-config" || scenario === "changed-root" || scenario === "late-edit") {
           lateEdit = scenario === "late-edit";
-          const changed = scenario === "late-edit" ? second : { ...second, session: { ...second.session, lifecyclePolicy: { mode: "warm" as const, idleTimeoutMs: 99_000 } } };
+          const changed = scenario !== "final-config" ? second : { ...second, session: { ...second.session, lifecyclePolicy: { mode: "warm" as const, idleTimeoutMs: 99_000 } } };
           await expect(executePaperclipNativeSession({ db: leaseDb(changed), execution: changed, runnerInstanceId: identity,
             runnerExecutionTarget: target, instructionWorkingCopy: current })).rejects.toThrow(scenario === "late-edit"
               ? "native_instruction_preparation_copy_changed" : "native_instruction_preparation_configuration_changed");
