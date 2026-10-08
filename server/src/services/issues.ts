@@ -11302,8 +11302,7 @@ export function issueService(db: Db) {
           agentId: actorAgentId ?? null,
           userId: actorUserId ?? null,
         });
-        await recordChatCompletion(tx, receiptExisting, updated);
-        if (receiptExisting.status !== updated.status) {
+        if (await recordChatCompletion(tx, receiptExisting, updated)) {
           queuedPostCommitActions.push({ type: "wake_chat_completions" });
         }
         // An operator explicitly choosing a disposition owns that decision,

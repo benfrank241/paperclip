@@ -31,13 +31,15 @@ export async function recordChatHandoff(tx: Connection, task: Issue, actorRunId:
 }
 
 /** Must run on the same transaction as status projection (including native arbitration). */
-export async function recordChatCompletion(tx: Connection, before: Issue, after: Issue) {
-  if (before.status === after.status) return;
+export async function recordChatCompletion(tx: Connection, before: Issue, after: Issue): Promise<boolean> {
+  if (before.status === after.status) return false;
   await tx.update(deliveries).set({ status: "superseded" }).where(and(eq(deliveries.taskId, after.id),
     eq(deliveries.companyId, after.companyId), inArray(deliveries.status, [...pending])));
-  if (after.status !== "done") return;
+  if (after.status !== "done") return false;
   const [handoff] = await tx.select().from(handoffs).where(and(eq(handoffs.taskId, after.id), eq(handoffs.companyId, after.companyId)));
-  if (handoff) await tx.insert(deliveries).values({ companyId: after.companyId, taskId: after.id, statusVersion: after.statusVersion }).onConflictDoNothing();
+  if (!handoff) return false;
+  await tx.insert(deliveries).values({ companyId: after.companyId, taskId: after.id, statusVersion: after.statusVersion }).onConflictDoNothing();
+  return true;
 }
 
 async function loadAudience(tx: Connection, deliveryId: string) {
