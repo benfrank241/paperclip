@@ -475,6 +475,7 @@ import {
   nativeToolContractFingerprintForTarget,
   prepareNativeSessionBootstrapPersistence,
   prepareNativeWorkspaceSync,
+  readNativeWorkspaceSyncReference,
   recordNativeFinalizationFailure,
   type NativeRestartRecoveryClaim,
   rebindNativeSessionCheckpoint,
