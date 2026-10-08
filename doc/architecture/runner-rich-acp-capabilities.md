@@ -1,6 +1,28 @@
 # Rich ACP integration and qualification report
 
-## Current Pi 1.0 qualification checkpoint — October 2, 2026
+## Current integration — 2026-10-08
+
+The experimental Runner admits **Pi profile 22** (`sha256:e92078bee3c23bec4100aa589013a44613d054cd686826534025d8019e9f39a9`) and
+**Cursor profile 15**. Copilot remains pending at **profile 17**. Legacy
+`pi_local` is unchanged. Pi accepts any explicit caller-selected provider/model
+ID and requires native acknowledgement; qualification models are examples, not
+an allowlist or a fallback.
+
+The requested task execution and human-control paths have seven passing cloud
+cases on profile 19 with the accepted Sonnet 4.6/low fixture. Profile 22 retains
+that wrapper, helper and extension, incorporates master's environment changes,
+patches brace-expansion to the official 5.0.12 payload, and excludes general AWS
+IAM credentials from Pi's environment. Bedrock's provider-scoped bearer key is
+supported. Those paid results retain their original profile-19 identity;
+current integration is verified separately by source, package and CI checks.
+Accounting and the wider platform/provider matrix remain deferred. See the
+[readiness plan](../plans/2026-10-02-pi-production-readiness.md#current-delivery-scope--2026-10-08)
+for the exact source/image evidence and merge status.
+
+All dated checkpoints below describe historical qualification attempts. Their
+failures and profile numbers are retained; they are not current release gates.
+
+## Historical Pi 1.0 qualification checkpoint — October 2, 2026
 
 Pi now uses `@earendil-works/pi-coding-agent@1.0.0`, `pi-acp@0.0.33`,
 ACPX `0.13.1`, and profile **12**. Its exact model remains
@@ -827,7 +849,7 @@ vendor functions; paid and remote qualification remain required. Pi's tool polic
 shell commands and filesystem races require the host boundary. These are
 qualification gates, not claims that a JavaScript path check confines a shell.
 
-## Explicit gaps and follow-ups
+## Historical gaps and follow-ups — October 2, 2026
 
 | Priority | Exposed but unused, partial, or unverified | Reason and next proof |
 | --- | --- | --- |

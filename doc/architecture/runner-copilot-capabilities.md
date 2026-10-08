@@ -1,6 +1,12 @@
 # Copilot 1.0.88 rich ACP capability audit
 
-Current source candidate (2026-10-01): **Copilot profile v12 is unqualified**.
+Current integration (2026-10-08): **Copilot profile v17 remains pending** with
+digest `sha256:481d0852ae8272a90f9912723d540518a874a0da65a9070e33b52ea1a14cbd7f`.
+It binds master's shared protocol-validation sources without changing the
+executable or supplying new paid qualification. Historical checkpoints below
+retain their original identities and outcomes.
+
+Historical source candidate (2026-10-01): **Copilot profile v12 is unqualified**.
 Receipt v2 preserves the original `inputSha256` and separately captures
 `normalizedInputSha256` from the same invocation's validated outgoing body.
 For the native sidecar, only a successful, correlated `tool.resolve` commits

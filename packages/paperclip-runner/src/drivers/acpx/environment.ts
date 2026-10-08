@@ -1,5 +1,5 @@
-import { configuredEnvironment } from "../../configured-environment.js";
-import { PI_CREDENTIAL_NAMES, piCredentialNames } from "./pi-provider-config.js";
+import { CONFIGURED_ENVIRONMENT_KEYS, configuredEnvironment, configuredEnvironmentKeys } from "../../configured-environment.js";
+import { PI_CREDENTIAL_NAMES, PI_GENERAL_IAM_CREDENTIAL_NAMES, piCredentialNames } from "./pi-provider-config.js";
 import type { QualifiedAcpxAgent } from "./qualified-profiles.js";
 
 export const ACPX_CREDENTIAL_BINDING_ENV = "PAPERCLIP_ACPX_CREDENTIAL_BINDING";
@@ -12,6 +12,16 @@ export const ACPX_CREDENTIAL_NAMES: Readonly<Record<QualifiedAcpxAgent, readonly
   codex: ["OPENAI_API_KEY", "CODEX_API_KEY", "PAPERCLIP_AI_PROVIDER_KEY"],
 };
 export const CLAUDE_ROUTING_ENV_KEYS = ["ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_EC2_METADATA_DISABLED", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL"] as const;
+
+/** Keep the task projection consistent when excluding general IAM from Pi. */
+function removePiIamCredentials(environment: NodeJS.ProcessEnv): void {
+  const names = configuredEnvironmentKeys(environment);
+  for (const name of PI_GENERAL_IAM_CREDENTIAL_NAMES) delete environment[name];
+  if (environment[CONFIGURED_ENVIRONMENT_KEYS] !== undefined) {
+    environment[CONFIGURED_ENVIRONMENT_KEYS] = JSON.stringify(names.filter(name => !PI_GENERAL_IAM_CREDENTIAL_NAMES.includes(name)));
+  }
+}
+
 const isCandidate = (agent: QualifiedAcpxAgent) => agent === "pi" || agent === "cursor" || agent === "copilot";
 
 /** Mint only at the controller's explicit task-environment boundary, never by copying a marker. */
@@ -63,6 +73,7 @@ export function createAcpxSidecarHostEnvironment(
       delete result[name];
     }
   }
+  if (agent === "pi") removePiIamCredentials(result);
   return result;
 }
 
@@ -135,6 +146,7 @@ export function createSanitizedAcpxSpawnInput(
     retainedBytes += entryBytes;
     result[key] = value;
   }
+  if (agent === "pi") removePiIamCredentials(result);
   return Object.freeze({
     env: Object.freeze(result),
   }) as SanitizedAcpxSpawnInput;

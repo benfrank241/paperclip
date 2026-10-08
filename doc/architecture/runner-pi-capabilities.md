@@ -1,6 +1,28 @@
 # Pi rich ACP runtime
 
-## Pi 1.0 candidate (2026-10-02, profile v12)
+## Current integration — 2026-10-08
+
+The experimental Runner admits **Pi profile 22** (`sha256:e92078bee3c23bec4100aa589013a44613d054cd686826534025d8019e9f39a9`) and
+**Cursor profile 15**. Copilot remains pending at **profile 17**. Legacy
+`pi_local` is unchanged. Pi accepts any explicit caller-selected provider/model
+ID and requires native acknowledgement; qualification models are examples, not
+an allowlist or a fallback.
+
+The requested task execution and human-control paths have seven passing cloud
+cases on profile 19 with the accepted Sonnet 4.6/low fixture. Profile 22 retains
+that wrapper, helper and extension, incorporates master's environment changes,
+patches brace-expansion to the official 5.0.12 payload, and excludes general AWS
+IAM credentials from Pi's environment. Bedrock's provider-scoped bearer key is
+supported. Those paid results retain their original profile-19 identity;
+current integration is verified separately by source, package and CI checks.
+Accounting and the wider platform/provider matrix remain deferred. See the
+[readiness plan](../plans/2026-10-02-pi-production-readiness.md#current-delivery-scope--2026-10-08)
+for the exact source/image evidence and merge status.
+
+All dated checkpoints below describe historical qualification attempts. Their
+failures and profile numbers are retained; they are not current release gates.
+
+## Historical Pi 1.0 candidate (2026-10-02, profile v12)
 
 The candidate now pins **`@earendil-works/pi-coding-agent@1.0.0`** with
 `pi-acp@0.0.33`, ACPX `0.13.1`, and portable Node `24.21.0`. Pi v11 and older
@@ -1060,9 +1082,8 @@ location and repeat setup. Concurrent setup is rejected. Cancellation drains the
 current bounded download/build command before removing its private staging tree;
 allow that cleanup to complete before trying again.
 
-Then select Pi with the exact model
-`openrouter/deepseek/deepseek-v4-flash-0731` and bind an OpenRouter credential
-through the normal provider credential UI. Setup itself makes no model request.
+Then select Pi with an explicit provider/model ID and bind its provider credential
+through the normal agent environment configuration. Setup itself makes no model request.
 A missing host closure produces explicit setup guidance. Daytona uses the
 separately built and verified Linux provider pack in its runner image; running
 local setup does not install or qualify a remote image. Published-tar local and
