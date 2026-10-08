@@ -3485,7 +3485,7 @@ export function heartbeatService(
         lastHeartbeatAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(agents.id, agentId))
+      .where(and(eq(agents.id, agentId), eq(agents.lifecycleState, "ready")))
       .returning()
       .then((rows) => rows[0] ?? null);
 
@@ -6952,6 +6952,7 @@ export function heartbeatService(
             and(
               eq(agents.id, agent.id),
               notInArray(agents.status, [...DIRECT_NON_INVOKABLE_STATUSES]),
+              eq(agents.lifecycleState, "ready"),
             ),
           )
           .returning()
