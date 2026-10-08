@@ -2,6 +2,8 @@ import { ensureNativeCompletionContract } from "../services/native-runtime/compl
 import { readNativePlanWait, hasCommittedNativePlanWait } from "../services/native-runtime/native-plan-wait.js";
 import { nativeSha256 } from "../services/native-runtime/canonical.js";
 import { buildQuestionResponseDeliveryEnvelope } from "../services/question-response-delivery.js";
+import * as aiConnectionRuntime from "../services/ai-connection-runtime.js";
+import { unprocessable } from "../errors.js";
 import * as executionContinuation from "../services/execution-continuation.js";
 import * as environmentOrchestrator from "../services/environment-run-orchestrator.js";
 import { remoteTerminationReceipt } from "../services/remote-execution-termination.js";
@@ -49,6 +51,7 @@ import {
   chatExternalPrincipals,
   chatMessageLinks,
   chatPublications,
+  companyMemberships,
   companySecretBindings,
   companySecrets,
   companySkills,
@@ -1527,6 +1530,53 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     return { companyId, agentId, runId, wakeupRequestId, issueId };
   }
+
+  it.each(["missing_default", "database_error", "unmarked_http_error", "provider_error"] as const)(
+    "preserves AI configuration recovery and reports only unexpected causes: %s", async (cause) => {
+      const { companyId, agentId, issueId, runId, wakeupRequestId } = await seedQueuedIssueRunFixture();
+      await db.insert(companyMemberships).values({ companyId, principalType: "user", principalId: "responsible-user", status: "active", membershipRole: "member" });
+      await db.update(agents).set({ runtimeConfig: {
+        heartbeat: { wakeOnDemand: true, maxConcurrentRuns: 1 },
+        aiConnection: { provider: "openai", method: "api_key", mode: "responsible_user" },
+      } }).where(eq(agents.id, agentId));
+      const prepare = vi.spyOn(aiConnectionRuntime, "prepareManagedAiRuntime");
+      if (cause !== "missing_default") prepare.mockRejectedValueOnce(
+        cause === "unmarked_http_error"
+          ? unprocessable("Connect an account and choose your personal default", { code: "ai_connection_default_missing" })
+          : new Error(cause),
+      );
+      try {
+        const heartbeat = heartbeatService(db);
+        await heartbeat.resumeQueuedRuns();
+        await waitForRunToSettle(heartbeat, runId, 5_000);
+        await heartbeat.waitForRunExecutionDrain(runId);
+        await waitForPendingRunFailureReports();
+        expect(prepare).toHaveBeenCalled();
+        const failed = await heartbeat.getRun(runId);
+        expect(failed).toMatchObject({ status: "failed", errorCode: "configuration_incomplete",
+          resultJson: { configurationIncomplete: { reason: "ai_connection_unavailable" }, executionRecovery: { kind: "bootstrap", providerWorkStarted: false } },
+        });
+        if (cause === "missing_default") {
+          expect(failed?.error).toBe("Connect an account and choose your personal default");
+          expect(failed?.resultJson?.configurationIncomplete).toMatchObject({ selectionFailure: "ai_connection_default_missing" });
+          expect(mockCaptureRunFailure).not.toHaveBeenCalled();
+        } else {
+          expect(failed?.resultJson?.configurationIncomplete).not.toHaveProperty("selectionFailure");
+          expect(mockCaptureRunFailure).toHaveBeenCalledWith(expect.objectContaining({ runId, errorCode: "configuration_incomplete" }));
+        }
+        expect(mockAdapterExecute).not.toHaveBeenCalled();
+        const [issue] = await db.select().from(issues).where(eq(issues.id, issueId));
+        expect(issue).toMatchObject({ status: "blocked", executionRunId: null });
+        const [action] = await db.select().from(issueRecoveryActions).where(eq(issueRecoveryActions.sourceIssueId, issueId));
+        expect(action).toMatchObject({ status: "active", kind: "configuration_validation", cause: "configuration_incomplete", ownerType: "board" });
+        const [wakeup] = await db.select().from(agentWakeupRequests).where(eq(agentWakeupRequests.id, wakeupRequestId));
+        expect(wakeup.status).toBe("failed");
+      } finally {
+        prepare.mockRestore();
+        await db.delete(companyMemberships).where(eq(companyMemberships.companyId, companyId));
+      }
+    },
+  );
 
   it.each(["timeout", "upstream", "cleanup_pending", "cleanup_pending_edited", "cleanup_pending_exhausted", "edited", "exhausted", "new_message", "no_claim", "reassigned", "superseded", "stopped"])(
     "settles explicit retry admission through real executor cleanup: %s", async scenario => {

@@ -443,6 +443,16 @@ evidence, unknown binding reasons, secret-provider failures, ambiguous missing
 secret-definition lookups remain reportable. This filter does not change task
 recovery, credentials, or execution policy.
 
+AI account selection also stays local when the selection service proves a
+missing responsible user, personal default, or selected connection; an
+incompatible selection; or an account that needs reconnection. The service marks
+the original error, and setup preserves its closed `selectionFailure` reason.
+The same failed/preparing/setup/bootstrap checks apply, and resumed native runs
+with persisted provider input remain reportable. The generic
+`ai_connection_unavailable` wrapper alone is insufficient: database, credential
+provider, controller, and unclassified errors still report. Failed runs, blocked
+tasks, and account-repair actions remain unchanged.
+
 A workspace policy conflict also stays local when the resolver proves that an
 explicit `local_path` or `non_git_path` project workspace has no repository URL,
 Git confirms the selected directory is not a repository, and the task requests
