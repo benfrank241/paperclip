@@ -4192,9 +4192,9 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       for (const canary of [configToken, signingSecret, clientSecret, f.token]) expect(publicState).not.toContain(canary);
       await request(f.app).patch(`/api/chat-endpoints/${f.endpoint.id}`).send({ slackApp: appDetails }).expect(409);
     });
-    it("uploads avatar bytes without fetching a tenant-session-protected URL, after app credentials are durable", async () => {
+    it.each([undefined, "22222222-2222-4222-8222-222222222222"])("uploads preset bytes after credentials are durable, even with private avatar %s", async customAvatarAssetId => {
       const f = await fixture();
-      await db.update(agents).set({ appearance: { schemaVersion: 1, characterVersion: "cap-v1", paletteId: "cherry-pop" } }).where(eq(agents.id, f.assignedAgentId));
+      await db.update(agents).set({ appearance: { schemaVersion: 1, characterVersion: "cap-v1", paletteId: "cherry-pop", customAvatarAssetId } }).where(eq(agents.id, f.assignedAgentId));
       f.state.beforeIcon = async () => {
         const row = (await f.service.slackRegistration.registration(f.endpoint.id))!;
         expect(row).toMatchObject({ status: "install", appId: f.appId });
