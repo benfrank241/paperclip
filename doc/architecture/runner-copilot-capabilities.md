@@ -1,6 +1,12 @@
 # Copilot 1.0.88 rich ACP capability audit
 
-Current source candidate (2026-10-02): **Copilot profile v13 is unqualified**.
+Current integration (2026-10-08): **Copilot profile v17 remains pending** with
+digest `sha256:481d0852ae8272a90f9912723d540518a874a0da65a9070e33b52ea1a14cbd7f`.
+It binds master's shared protocol-validation sources without changing the
+executable or supplying new paid qualification. Historical checkpoints below
+retain their original identities and outcomes.
+
+Historical source candidate (2026-10-02): **Copilot profile v13 is unqualified**.
 Pi's explicit reasoning-mode support changed four shared transport and schema
 source files included in Copilot's execution identity. Version 13 records those
 source hashes with digest

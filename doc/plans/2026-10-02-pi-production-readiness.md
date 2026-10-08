@@ -22,7 +22,9 @@ fallback is added. Pi profile 19 has command digest
 
 An initial master integration checkpoint used Pi profile 20 (`sha256:465ae72460f05cae961873f09cd7cd3652dc3a6949930b7ee16303925cd3dd0e`). It bound the Codex-only sandbox change. This checkpoint is retained as history and is superseded by profile 21 before merge.
 
-The assembled merge uses Pi profile 21 (`sha256:514cbf86e70c1eaedebdf924bc0f3de4753c7a9e0313a0bb38614b6b9481a9a1`). It restores master's explicit task-environment projection and patches the bundled `brace-expansion` dependency from 5.0.9 to the official 5.0.12 payload. Pi 1.0.0, pi-acp 0.0.33, Node 24.21.0, wrapper, helper, extension, native question/control delivery, model selection and recovery identity remain unchanged. The original three closure hashes were reproduced before calculating the patched ones. The dependency patch is hash-pinned, is included in installed setup tooling, and is checked against the complete locked package graph. The seven live results retain their original profile-19 source and are not relabeled as fresh profile-21 runs. Profile-21 integration and the narrow security correction require current-head tests, package materialization and CI before merge. Cursor keeps its existing qualified status. Copilot stays pending; its new profile-17 attestation only binds master's updated shared protocol validation sources.
+The dependency correction checkpoint uses Pi profile 21 (`sha256:514cbf86e70c1eaedebdf924bc0f3de4753c7a9e0313a0bb38614b6b9481a9a1`). It restores master's explicit task-environment projection and patches the bundled `brace-expansion` dependency from 5.0.9 to the official 5.0.12 payload. Pi 1.0.0, pi-acp 0.0.33, Node 24.21.0, wrapper, helper, extension, native question/control delivery, model selection and recovery identity remain unchanged. The original three closure hashes were reproduced before calculating the patched ones. The dependency patch is hash-pinned, is included in installed setup tooling, and is checked against the complete locked package graph. The seven live results retain their original profile-19 source and are not relabeled as fresh profile-21 runs. Profile-21 integration and the narrow security correction require current-head tests, package materialization and CI before merge. Cursor keeps its existing qualified status. Copilot stays pending; its new profile-17 attestation only binds master's updated shared protocol validation sources.
+
+The assembled merge uses **Pi profile 22** (`sha256:e92078bee3c23bec4100aa589013a44613d054cd686826534025d8019e9f39a9`). Profile 21 remains a historical declaration. Version 22 changes only the version and credential-policy source hashes: general AWS IAM keys are excluded from both static and custom provider credentials, selected task-environment projections, and the Pi sidecar launch. `AWS_BEARER_TOKEN_BEDROCK` remains supported. The dependency closures, model selection, wrapper, helper, extension and question/control behavior are unchanged from profile 21. Rust admission uses the current declaration and rejects previous profiles. Current-head tests and CI must pass before merge; the profile-19 paid proof is not relabeled.
 
 | Core path | Canonical campaign | Retained evidence |
 | --- | --- | --- |
@@ -113,7 +115,7 @@ harness `ee3b094d35719e4dd7cbc791d1924205c4fa474f` and immutable image
 Their canonical results and independent cleanup pass; their host stops normally.
 They do not substitute for the seven fresh profile-19 results above.
 
-The earlier profile-20 merge checkpoint is retained above as history; current merge verification uses profile 21.
+The earlier profile-20 merge checkpoint is retained above as history; current merge verification uses profile 22.
 
 | Core path | Canonical campaign | Retained evidence |
 | --- | --- | --- |

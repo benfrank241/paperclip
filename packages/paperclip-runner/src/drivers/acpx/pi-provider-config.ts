@@ -13,12 +13,18 @@ export const PI_CREDENTIAL_NAMES = Object.freeze([
   "XIAOMI_TOKEN_PLAN_CN_API_KEY", "XIAOMI_TOKEN_PLAN_AMS_API_KEY", "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
   "ANT_LING_API_KEY", "QWEN_TOKEN_PLAN_API_KEY", "QWEN_TOKEN_PLAN_CN_API_KEY",
   "TYPESAFE_API_KEY", "RADIUS_API_KEY", "COPILOT_GITHUB_TOKEN", "AWS_BEARER_TOKEN_BEDROCK",
-  "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
   "PAPERCLIP_PI_PROVIDERS",
 ]);
 
-// These names alter process startup rather than identify a provider credential.
+// General IAM credentials authorize services beyond the model provider. Bedrock
+// uses its provider-scoped bearer credential instead.
+export const PI_GENERAL_IAM_CREDENTIAL_NAMES = Object.freeze([
+  "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
+]);
+
+// Process startup controls and general IAM credentials are never provider inputs.
 const RESERVED_PI_CREDENTIAL_NAMES = new Set<string>([
+  ...PI_GENERAL_IAM_CREDENTIAL_NAMES,
   "PATH",
   "HOME",
   "SHELL",

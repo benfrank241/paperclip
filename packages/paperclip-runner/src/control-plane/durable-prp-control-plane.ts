@@ -3463,14 +3463,16 @@ function runnerEnvironment(
     if (marker !== undefined && Buffer.byteLength(marker) <= 4_096) {
       try { binding = JSON.parse(marker); } catch { /* Sidecar admission rejects invalid markers. */ }
     }
+    let taskEnvironmentSource = explicitSource;
     if (binding !== null && typeof binding === "object" && !Array.isArray(binding)
       && (binding as Record<string, unknown>).agent === "pi") {
       const bound = createAcpxSidecarHostEnvironment(explicitSource, "pi", normalizedSessionId);
+      taskEnvironmentSource = bound;
       for (const key of piCredentialNames(explicitSource)) {
         if (bound[key] !== undefined) environment[key] = bound[key];
       }
     }
-    Object.assign(environment, githubCredentialEnvironment(explicitSource), configuredEnvironment(explicitSource));
+    Object.assign(environment, githubCredentialEnvironment(explicitSource), configuredEnvironment(taskEnvironmentSource));
   }
   return environment;
 }
