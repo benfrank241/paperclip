@@ -1,3 +1,4 @@
+import { notifyDeliveryWork, DELIVERY_QUEUES } from "./delivery-work-notifications.js";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { and, asc, desc, eq, getTableColumns, gte, isNull, lte, ne, or } from "drizzle-orm";
@@ -1715,6 +1716,15 @@ async function buildFeedbackTraceBundleFromRow(
 }
 
 export function feedbackService(db: Db, options: FeedbackServiceOptions = {}) {
+  // The route's immediate flush and the queue worker share this service.
+  // Serialize them so an enqueue signal cannot upload the same trace twice.
+  let exportFlush: Promise<unknown> = Promise.resolve();
+  function serializeExportFlush<T>(operation: () => Promise<T>): Promise<T> {
+    const result = exportFlush.then(operation, operation);
+    exportFlush = result.catch(() => undefined);
+    return result;
+  }
+
   return {
     listIssueVotesForUser: async (issueId: string, authorUserId: string) =>
       db
@@ -1786,12 +1796,20 @@ export function feedbackService(db: Db, options: FeedbackServiceOptions = {}) {
       return row ? buildFeedbackTraceBundleFromRow(db, row) : null;
     },
 
+    hasPendingFeedbackTraces: async () => {
+      const pending = options.shareClient
+        ? or(eq(feedbackExports.status, "pending"), eq(feedbackExports.status, "failed"))
+        : eq(feedbackExports.status, "pending");
+      return (await db.select({ id: feedbackExports.id }).from(feedbackExports)
+        .where(pending).limit(1)).length > 0;
+    },
+
     flushPendingFeedbackTraces: async (input?: {
       companyId?: string;
       traceId?: string;
       limit?: number;
       now?: Date;
-    }) => {
+    }) => serializeExportFlush(async () => {
       const shareClient = options.shareClient;
       if (!shareClient) {
         const filters = [eq(feedbackExports.status, "pending")];
@@ -1900,7 +1918,7 @@ export function feedbackService(db: Db, options: FeedbackServiceOptions = {}) {
         sent,
         failed,
       };
-    },
+    }),
 
     saveIssueVote: async (input: {
       issueId: string;
@@ -2133,6 +2151,9 @@ export function feedbackService(db: Db, options: FeedbackServiceOptions = {}) {
           persistedSharingPreference,
           sharingEnabled: sharedWithLabs,
         };
+      }).then(result => {
+        if (result.sharingEnabled) notifyDeliveryWork(db, DELIVERY_QUEUES.feedback);
+        return result;
       }),
   };
 }

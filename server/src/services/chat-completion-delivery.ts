@@ -243,5 +243,9 @@ export function chatCompletionDeliveryService(db: Db, heartbeat: { wakeup(agentI
       .orderBy(asc(deliveries.nextAttemptAt)).limit(100);
     for (const row of due) await deliver(row.id);
   }
-  return { deliver, sweepPending };
+  async function hasPending() {
+    return (await db.select({ id: deliveries.id }).from(deliveries)
+      .where(inArray(deliveries.status, [...pending])).limit(1)).length > 0;
+  }
+  return { deliver, sweepPending, hasPending };
 }

@@ -1,3 +1,5 @@
+import { subscribeDeliveryWork } from "../services/delivery-work-notifications.js";
+import { DELIVERY_QUEUES } from "../services/delivery-work-notifications.js";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -800,6 +802,8 @@ describeEmbeddedPostgres("feedbackService.saveIssueVote", () => {
       sessionId,
     });
 
+    const notified = vi.fn();
+    const unsubscribe = subscribeDeliveryWork(db, DELIVERY_QUEUES.feedback, notified);
     await flushingSvc.saveIssueVote({
       issueId,
       targetType: "issue_comment",
@@ -808,7 +812,12 @@ describeEmbeddedPostgres("feedbackService.saveIssueVote", () => {
       authorUserId: "user-1",
       allowSharing: true,
     });
-    await flushingSvc.flushPendingFeedbackTraces();
+    unsubscribe();
+    expect(notified).toHaveBeenCalledTimes(1);
+    expect(await flushingSvc.hasPendingFeedbackTraces()).toBe(true);
+    // The route and worker may request a flush together after the commit.
+    await Promise.all([flushingSvc.flushPendingFeedbackTraces(), flushingSvc.flushPendingFeedbackTraces()]);
+    expect(await flushingSvc.hasPendingFeedbackTraces()).toBe(false);
 
     expect(uploadTraceBundle).toHaveBeenCalledTimes(1);
     const bundle = uploadTraceBundle.mock.calls[0]?.[0] as Record<string, unknown> | undefined;

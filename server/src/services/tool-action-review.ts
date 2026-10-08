@@ -1,3 +1,4 @@
+import { notifyDeliveryWork, DELIVERY_QUEUES } from "./delivery-work-notifications.js";
 import { and, eq } from "drizzle-orm";
 import {
   issues,
@@ -238,6 +239,7 @@ export async function commitToolActionReview(
     }
     return updated;
   });
+  notifyDeliveryWork(db, DELIVERY_QUEUES.toolAction);
   // A rejection writes the invocation's terminal `denied` status inside the
   // transaction above; emit only after that commit. Approvals stay in-flight
   // and reach their terminal status in the gateway execution paths.
