@@ -1,5 +1,27 @@
 # Pi rich ACP runtime
 
+## Current integration — 2026-10-08
+
+The experimental Runner admits **Pi profile 22** (`sha256:e92078bee3c23bec4100aa589013a44613d054cd686826534025d8019e9f39a9`) and
+**Cursor profile 15**. Copilot remains pending at **profile 17**. Legacy
+`pi_local` is unchanged. Pi accepts any explicit caller-selected provider/model
+ID and requires native acknowledgement; qualification models are examples, not
+an allowlist or a fallback.
+
+The requested task execution and human-control paths have seven passing cloud
+cases on profile 19 with the accepted Sonnet 4.6/low fixture. Profile 22 retains
+that wrapper, helper and extension, incorporates master's environment changes,
+patches brace-expansion to the official 5.0.12 payload, and excludes general AWS
+IAM credentials from Pi's environment. Bedrock's provider-scoped bearer key is
+supported. Those paid results retain their original profile-19 identity;
+current integration is verified separately by source, package and CI checks.
+Accounting and the wider platform/provider matrix remain deferred. See the
+[readiness plan](../plans/2026-10-02-pi-production-readiness.md#current-delivery-scope--2026-10-08)
+for the exact source/image evidence and merge status.
+
+All dated checkpoints below describe historical qualification attempts. Their
+failures and profile numbers are retained; they are not current release gates.
+
 ## User-selected models (2026-10-06)
 
 Native Pi accepts any explicit provider/model ID. The settings builder, server,
@@ -14,7 +36,7 @@ Custom models use `PAPERCLIP_PI_PROVIDERS`, an explicit JSON object in Pi's
 `models.json` providers format. The runner writes it into the private Pi home,
 forwards explicitly bound credential references, and includes its digest in
 recovery identity. Credential commands and control-plane credential references
-are rejected. Choose a thinking level supported by the selected model (`off`
+are rejected. General AWS IAM keys are excluded; Bedrock uses `AWS_BEARER_TOKEN_BEDROCK`. Choose a thinking level supported by the selected model (`off`
 for a model without reasoning).
 
 The DeepSeek model IDs throughout the historical qualification results below
@@ -22,7 +44,7 @@ identify those attempts; they are not a product allowlist. Those results do not
 qualify this merge or additional models.
 
 
-## Pi 1.0 candidate (2026-10-02, profile v13)
+## Historical Pi 1.0 candidate (2026-10-02, profile v13)
 
 Pi remains pinned to **`@earendil-works/pi-coding-agent@1.0.0`**, with
 `pi-acp@0.0.33`, ACPX `0.13.1`, and Node `24.21.0`. Profile 13 adds explicit
@@ -74,7 +96,7 @@ control, and Daytona results must be established independently.
 | Recover selected level | Native restored state plus explicit effective-level verification | Mode-bound durable session identity | Old profiles and missing or mismatched mode identity cannot reuse a warm session. |
 | Provider notice severity and pricing provenance | `paperclip/pi_notice` and canonical `provider.notice.recorded` | Retained run event, usage metadata, and safe summary with severity in the activity row | Summary/severity rendering has deterministic coverage; paid visual verification of the rebuilt UI remains pending. Pricing estimates remain distinct from provider billing receipts. |
 
-## Profile-13 qualification checkpoint (2026-10-02)
+## Historical profile-13 qualification checkpoint (2026-10-02)
 
 The installed candidate from source `eac50643213d0902a93a5384bae2f1d6c065c9f2`
 uses Pi 1.0.0, the explicit OpenRouter DeepSeek model above, and verified `low`

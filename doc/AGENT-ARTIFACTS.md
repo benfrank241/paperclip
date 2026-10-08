@@ -13,12 +13,15 @@ remote workspace. Supply a workspace-relative `contentRef`, basename `filename`,
 The tool verifies the file, stores an attachment and artifact work product, and
 binds it to the response. Generic API tools and a legacy API key are unnecessary.
 
-Managed personal memory and a file explicitly requested only for internal
-verification do not require a downloadable attachment. The completion gate uses
-the current task objective to distinguish those from requested file outputs;
-an internal file cannot excuse a separate download request. Expected denied
-native writes in a negative test also do not represent a requested deliverable.
-Requested downloads still require verified accessible publication evidence.
+The completion gate permits a narrow objective-level exception for one requested
+file when the following sentence explicitly qualifies it, for example:
+`Write memory.txt. This is personal memory, not a task deliverable.` or
+`Write internal-proof.txt. This is an internal verification file, not a deliverable.`
+The qualifier applies to that single preceding file request. Multiple files,
+separate report requests, and explicit attachment/download requests still need
+verified accessible publication evidence. Saying only “for internal verification”
+does not establish this exception. Expected denied native writes in a negative
+test are separately recognized as denied attempts, not requested deliverables.
 
 Wait for the receipt. It includes `attachmentId`, `contentPath`, and
 `downloadPath`, along with the existing command, revision, entity references,
