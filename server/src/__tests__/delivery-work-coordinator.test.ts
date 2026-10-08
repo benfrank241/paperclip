@@ -97,6 +97,21 @@ describe("delivery work coordinator", () => {
     await replacement.register(DELIVERY_QUEUES.chatCompletion, t).ready;
     expect(t.run).toHaveBeenCalledTimes(2);
   });
+  it("cancels an abortable delivery before awaiting shutdown", async () => {
+    const s = setup();
+    const hasPending = vi.fn(async () => false);
+    const run = vi.fn((signal: AbortSignal) => new Promise<void>((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    }));
+    s.coordinator.register(DELIVERY_QUEUES.feedback, { retryMs: 5000, run, hasPending });
+    await vi.advanceTimersByTimeAsync(1);
+    await s.coordinator.stop();
+    expect(run.mock.calls[0]?.[0].aborted).toBe(true);
+    expect(hasPending).not.toHaveBeenCalled();
+    expect(s.onError).not.toHaveBeenCalled();
+    expect(idleWorkSnapshot().active).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it("isolates owners and topics and never rejects a commit because its optional listener fails", () => {
     const s = setup(), other = {}, listener = vi.fn();
     const unsubscribe = subscribeDeliveryWork(s.owner, DELIVERY_QUEUES.feedback, listener);

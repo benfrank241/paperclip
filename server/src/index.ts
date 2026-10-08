@@ -1271,12 +1271,13 @@ async function startServerWithDatabaseTeardown(
     run: () => service.sweepPending(),
     hasPending: () => service.hasPending(),
   }));
-  // Native/caller-owned transactions already publish activity after commit.
-  // Keep this supplementary nudge; scheduled recovery covers omitted effects.
+  // Preserve the existing task-scoped activity fast path. Claims in the
+  // delivery service arbitrate with the coordinator's startup/recovery sweep.
   const unsubscribeChatCompletions = subscribeAllCompanyLiveEvents(event => {
-    if (event.type === "activity.logged" && event.payload.action === "issue.updated") {
-      deliveryWorkers[0]!.wake();
-    }
+    if (isIdleTaskDrainActive() || isWarmStandby() || heartbeatSchedulerStopped || event.type !== "activity.logged" ||
+      event.payload.action !== "issue.updated" || typeof event.payload.entityId !== "string") return;
+    trackHeartbeatSchedulerWork(chatCompletionDeliveries.sweepPending({ companyId: event.companyId, taskId: event.payload.entityId })
+      .catch(err => logger.error({ err }, "post-commit chat completion delivery failed")));
   });
   server.on("close", unsubscribeChatCompletions);
   const runEnvironmentLeaseCleanupSweep = (backoffMs: number) =>

@@ -112,7 +112,7 @@ const feedbackExportColumns = getTableColumns(feedbackExports);
 const instructionsSvc = agentInstructionsService();
 
 type FeedbackTraceShareClient = {
-  uploadTraceBundle(bundle: FeedbackTraceBundle): Promise<{ objectKey: string }>;
+  uploadTraceBundle(bundle: FeedbackTraceBundle, signal?: AbortSignal): Promise<{ objectKey: string }>;
 };
 
 type FeedbackServiceOptions = {
@@ -1716,8 +1716,8 @@ async function buildFeedbackTraceBundleFromRow(
 }
 
 export function feedbackService(db: Db, options: FeedbackServiceOptions = {}) {
-  // The route's immediate flush and the queue worker share this service.
-  // Serialize them so an enqueue signal cannot upload the same trace twice.
+  // Serialize explicit flushes and the worker's batches so callers cannot
+  // upload the same trace concurrently. HTTP vote handlers only save and notify.
   let exportFlush: Promise<unknown> = Promise.resolve();
   function serializeExportFlush<T>(operation: () => Promise<T>): Promise<T> {
     const result = exportFlush.then(operation, operation);
@@ -1809,8 +1809,10 @@ export function feedbackService(db: Db, options: FeedbackServiceOptions = {}) {
       traceId?: string;
       limit?: number;
       now?: Date;
+      signal?: AbortSignal;
     }) => serializeExportFlush(async () => {
       const shareClient = options.shareClient;
+      input?.signal?.throwIfAborted();
       if (!shareClient) {
         const filters = [eq(feedbackExports.status, "pending")];
         if (input?.companyId) {
@@ -1879,12 +1881,13 @@ export function feedbackService(db: Db, options: FeedbackServiceOptions = {}) {
       let failed = 0;
 
       for (const row of rows) {
+        if (input?.signal?.aborted) break;
         const attemptAt = input?.now ?? new Date();
         attempted += 1;
 
         try {
           const bundle = await buildFeedbackTraceBundleFromRow(db, row);
-          await shareClient.uploadTraceBundle(bundle);
+          await shareClient.uploadTraceBundle(bundle, input?.signal);
 
           await db
             .update(feedbackExports)

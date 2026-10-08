@@ -27,7 +27,7 @@ export function createDeliveryWorkCoordinator(input: {
     nextWakeAt: scheduler.nextWakeAt,
     register(queue: DeliveryQueue, task: {
       retryMs: number;
-      run: () => Promise<unknown>;
+      run: (signal: AbortSignal) => Promise<unknown>;
       hasPending: () => Promise<boolean>;
     }) {
       if (stopped) throw new Error("Delivery coordinator is stopped");
@@ -35,6 +35,7 @@ export function createDeliveryWorkCoordinator(input: {
       let dirty = false;
       let running: Promise<void> | null = null;
       let workerStopped = false;
+      let controller: AbortController | null = null;
       function schedule(delay: number) {
         if (!workerStopped) scheduler.schedule(queue, Date.now() + delay, start);
       }
@@ -44,15 +45,18 @@ export function createDeliveryWorkCoordinator(input: {
         if (!input.canRun()) { schedule(task.retryMs); return; }
         dirty = false;
         const finish = beginIdleTrackedWork();
-        running = Promise.resolve().then(task.run).then(task.hasPending).then(pending => {
+        const attempt = new AbortController();
+        controller = attempt;
+        running = Promise.resolve().then(() => task.run(attempt.signal)).then(() => workerStopped ? false : task.hasPending()).then(pending => {
           if (pending) schedule(task.retryMs);
         }).catch(error => {
           schedule(task.retryMs);
           // Logging must never turn a recoverable sweep failure into an
           // unhandled rejection or prevent other queues from running.
-          try { input.onError(error, queue); } catch { /* Recovery remains scheduled. */ }
+          try { if (!workerStopped) input.onError(error, queue); } catch { /* Recovery remains scheduled. */ }
         }).finally(() => {
           running = null;
+          controller = null;
           finish();
           if (dirty) schedule(0);
         });
@@ -65,6 +69,7 @@ export function createDeliveryWorkCoordinator(input: {
       const unsubscribe = subscribeDeliveryWork(input.owner, queue, wake);
       const worker = { wake, async stop() {
         workerStopped = true;
+        controller?.abort(new Error("Delivery worker stopped"));
         unsubscribe();
         scheduler.cancel(queue);
         await running;

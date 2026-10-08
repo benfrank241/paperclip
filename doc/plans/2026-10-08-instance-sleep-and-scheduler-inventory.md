@@ -55,7 +55,9 @@ boundary is proven. Outstanding deliveries and errors retain the existing retry
 cadence (five seconds for feedback, heartbeat interval for the other queues).
 A blocked sweep does not issue SQL during warm standby or idle drain; admission
 is checked again before each run. Shutdown cancels deadlines and awaits active
-sweeps. Pending tool receipts include reviews awaiting a later terminal status.
+sweeps. Feedback uploads have a 30-second deadline and accept shutdown
+cancellation; unstarted exports stay pending. Vote routes return after saving
+and notifying, without waiting for uploads. Pending tool receipts include reviews awaiting a later terminal status.
 
 This is a prerequisite for sleep, not proof of a sleeping stack. The scheduler's
 `nextWakeAt` covers only these registered tasks, not every existing application

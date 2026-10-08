@@ -684,6 +684,22 @@ describe("startServer feedback export wiring", () => {
     expect(completionSweepMock).toHaveBeenCalled();
   });
 
+  it("keeps activity-driven completion scans scoped to the changed task", async () => {
+    await startServer();
+    completionSweepMock.mockClear();
+    const { publishLiveEvent } = await import("../services/live-events.js");
+    publishLiveEvent({ companyId: "company-one", type: "activity.logged", payload: {
+      action: "issue.updated", entityId: "task-one",
+    } });
+    expect(completionSweepMock).toHaveBeenCalled();
+    for (const args of completionSweepMock.mock.calls) {
+      expect(args).toEqual([{ companyId: "company-one", taskId: "task-one" }]);
+    }
+    completionSweepMock.mockClear();
+    publishLiveEvent({ companyId: "company-two", type: "activity.logged", payload: { action: "issue.updated" } });
+    expect(completionSweepMock).not.toHaveBeenCalled();
+  });
+
   it("never invokes the retired review detector at startup or on periodic recovery", async () => {
     loadConfigMock.mockReturnValue(buildTestConfig({
       heartbeatSchedulerEnabled: true,
