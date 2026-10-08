@@ -20,8 +20,8 @@ assert.equal(JSON.parse(await readFile(join(server, 'package.json'), 'utf8')).na
 const { resolvePaperclipRunnerBinary } = await import(pathToFileURL(join(server, 'dist/services/native-runtime/native-codex-runner.js')));
 const { createCapabilityRunnerdCodexTransport } = await import(pathToFileURL(join(server, 'dist/vendor/paperclip-runner/live/runnerd-codex-transport.js')));
 const { QUALIFIED_ACPX_PROFILES } = await import(pathToFileURL(join(server, 'dist/vendor/paperclip-runner/drivers/acpx/qualified-profiles.js')));
-assert.equal(QUALIFIED_ACPX_PROFILES.pi.agentProfileVersion, 19);
-assert.equal(QUALIFIED_ACPX_PROFILES.pi.commandDigest, 'sha256:b7647ebf97f802ca053ec3384c912bf0e8d18eba308d27397bb1d95a37220825');
+assert.equal(QUALIFIED_ACPX_PROFILES.pi.agentProfileVersion, 22);
+assert.equal(QUALIFIED_ACPX_PROFILES.pi.commandDigest, 'sha256:e92078bee3c23bec4100aa589013a44613d054cd686826534025d8019e9f39a9');
 assert.equal(Object.hasOwn(QUALIFIED_ACPX_PROFILES.pi, 'qualificationModel'), false);
 assert.equal(Object.hasOwn(QUALIFIED_ACPX_PROFILES.pi, 'reportedModelId'), false);
 const daemon = resolvePaperclipRunnerBinary();
@@ -64,7 +64,7 @@ try {
   assert.equal(state.activeTurnId, null);
   assert.equal(state.identity, null);
   assert.equal(state.providerExitUnconfirmed, false);
-  console.log(JSON.stringify({ schema: 'paperclip.pi.public-npm-install.v1', target: `${process.platform}-${process.arch}`, normalPackagedDaemon: true, exactPiProfile: 19, runtime: '1.0.0', credentials: 'none', promptCalls: 0, settledMs, cleanRunnerExit: true }));
+  console.log(JSON.stringify({ schema: 'paperclip.pi.public-npm-install.v1', target: `${process.platform}-${process.arch}`, normalPackagedDaemon: true, exactPiProfile: 22, runtime: '1.0.0', credentials: 'none', promptCalls: 0, settledMs, cleanRunnerExit: true }));
 } finally {
   try { await bundle?.transport.close(); }
   finally { clearTimeout(watchdog); await rm(root, { recursive: true, force: true }); }

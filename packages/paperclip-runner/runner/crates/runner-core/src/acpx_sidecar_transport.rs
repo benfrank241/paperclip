@@ -178,6 +178,9 @@ fn pi_credential_environment_keys(binding: Option<&str>) -> Result<Vec<String>, 
                     | "GCONV_PATH"
                     | "LOCPATH"
                     | "NLSPATH"
+                    | "AWS_ACCESS_KEY_ID"
+                    | "AWS_SECRET_ACCESS_KEY"
+                    | "AWS_SESSION_TOKEN"
             );
         if !valid_name || protected_name || !seen.insert(name) {
             return Err(invalid());
