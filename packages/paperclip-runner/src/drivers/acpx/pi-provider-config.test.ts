@@ -38,7 +38,7 @@ describe("Pi caller-selected providers and models", () => {
     finally { vi.unstubAllEnvs(); }
   });
 
-  it.each(["!cat /private/key", "PAPERCLIP_API_KEY", "NODE_OPTIONS", "PATH"])("rejects unsafe custom-provider credential reference %s", apiKey => {
+  it.each(["!cat /private/key", "PAPERCLIP_API_KEY", "NODE_OPTIONS", "PATH", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"])("rejects unsafe custom-provider credential reference %s", apiKey => {
     expect(() => piProviderConfiguration({ PAPERCLIP_PI_PROVIDERS: JSON.stringify({ custom: { apiKey } }) })).toThrow();
   });
 
