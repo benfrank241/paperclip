@@ -23,7 +23,7 @@ Subscription reporting adds `ai_subscriptions` (company-scoped account identity)
 `ai_subscription_prices` (immutable price revisions), and
 `ai_subscription_connections` (selected grant-to-account bindings). New managed
 subscription receipts also have a nullable `cost_events.subscription_id`.
-Migration `0320_steep_ares.sql` is replay-safe and leaves existing cost
+Migration `0320_flashy_demogoblin.sql` is replay-safe and leaves existing cost
 amounts and receipts untouched. No historical account attribution is inferred.
 Deleting a connection removes its binding but retains subscription price history;
 disconnecting is not proof that provider billing ended. See

@@ -18,7 +18,7 @@ function fixture(): SubscriptionCostReport {
     api: emptyUsage(), subscription: { ...emptyUsage(), inputTokens: 100, cachedInputTokens: 50, outputTokens: 10 }, unknown: emptyUsage(), unattributedSubscription: emptyUsage(),
     accounts: [{ id: "account-1", provider: "anthropic", name: "Alice’s Claude", ownerUserId: "alice", ownerName: "Alice", identityVerified: true,
       detectedPlan: "max_5x", observedAt: "2026-10-08T00:00:00Z", lastCheckedAt: "2026-10-08T00:00:00Z", refreshStatus: "ok", canEdit: true,
-      price, history: [price], usage: emptyUsage(), agents: [{ id: "leela", name: "Leela" }] }],
+      price, usage: emptyUsage(), agents: [{ id: "leela", name: "Leela" }] }],
   };
 }
 

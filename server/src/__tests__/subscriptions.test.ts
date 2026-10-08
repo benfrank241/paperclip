@@ -84,7 +84,7 @@ describe("subscription identity and price rules", () => {
 
 describe("durable subscription reporting", () => {
   it("can replay the migration and retains fees after connection deletion", async () => {
-    const migration = await readFile(new URL("../../../packages/db/src/migrations/0320_steep_ares.sql", import.meta.url), "utf8");
+    const migration = await readFile(new URL("../../../packages/db/src/migrations/0320_flashy_demogoblin.sql", import.meta.url), "utf8");
     for (const statement of migration.split("--> statement-breakpoint")) await db.execute(sql.raw(statement));
     const c = await company(), input = await connection(c);
     await subscriptionService(db).register(input);
@@ -116,7 +116,7 @@ describe("durable subscription reporting", () => {
     const report = await subscriptionCostReport(db, c, owner, { allTime: true });
     expect(report.activeCount).toBe(2);
     expect(report.monthlyTotals).toEqual([{ currency: "USD", amountCents: "4000.0000000", estimatedCount: 2 }]);
-    expect(report.accounts.find(row => row.id === second)?.history).toHaveLength(1);
+    expect(report.accounts.find(row => row.id === second)?.price.revision).toBe(0);
   });
   it("does not multiply automatic fees when a plan has no stable account identity", async () => {
     const c = await company(), service = subscriptionService(db);
@@ -139,7 +139,8 @@ describe("durable subscription reporting", () => {
     await db.update(connectionGrants).set({ status: "revoked" }).where(eq(connectionGrants.id, input.grantId));
     const report = await subscriptionCostReport(db, c, owner, { from: new Date("2020-01-01"), to: new Date("2020-01-07") });
     expect(report.monthlyTotals).toEqual([{ currency: "EUR", amountCents: "1666.6666667", estimatedCount: 0 }]);
-    expect(report.accounts[0].history).toHaveLength(2);
+    expect(await db.select().from(aiSubscriptionPrices).where(eq(aiSubscriptionPrices.subscriptionId, id))).toHaveLength(2);
+    expect(report.accounts[0]).not.toHaveProperty("history");
     expect(report.accounts[0].usage.eventCount).toBe(0);
     expect((await db.select().from(costEvents).where(eq(costEvents.companyId, c)))).toHaveLength(0);
     const [state] = await db.select().from(companies).where(eq(companies.id, c));
@@ -167,7 +168,7 @@ describe("durable subscription reporting", () => {
     const c = await company(), input = await connection(c), id = await subscriptionService(db).register(input);
     await refreshSubscriptionConnection(db, input, id, fixtureRequest(usage("pro")));
     const report = await subscriptionCostReport(db, c, owner);
-    expect(report.accounts[0].history.map(price => price.amountCents)).toEqual(["2000.0000000", null]);
+    expect((await db.select().from(aiSubscriptionPrices).where(eq(aiSubscriptionPrices.subscriptionId, id)).orderBy(aiSubscriptionPrices.revision)).map(price => price.amountCents)).toEqual(["2000.0000000", null]);
     expect(report.monthlyTotals).toEqual([]);
     expect(report.unknownPriceCount).toBe(1);
     const observedAt = report.accounts[0].observedAt;
@@ -176,7 +177,7 @@ describe("durable subscription reporting", () => {
     const after = (await subscriptionCostReport(db, c, owner)).accounts[0];
     expect(after.observedAt).toBe(observedAt);
     expect(after.detectedPlan).toBe("pro");
-    expect(after.history).toHaveLength(2);
+    expect(await db.select().from(aiSubscriptionPrices).where(eq(aiSubscriptionPrices.subscriptionId, id))).toHaveLength(2);
     expect(after.refreshStatus).toBe("unavailable");
   });
   it("keeps shared subscription permissions and currencies separate", async () => {
@@ -190,6 +191,66 @@ describe("durable subscription reporting", () => {
       { currency: "EUR", amountCents: "2100.0000000", estimatedCount: 0 },
       { currency: "USD", amountCents: "2000.0000000", estimatedCount: 1 },
     ]);
+  });
+  it.each([true, false])("preserves personal and shared editors regardless of discovery order (shared first: %s)", async (sharedFirst) => {
+    const c = await company(), service = subscriptionService(db);
+    const personal = await connection(c), shared = await connection(c, token(), "openai", null);
+    const first = await service.register(sharedFirst ? shared : personal);
+    expect(await service.register(sharedFirst ? personal : shared)).toBe(first);
+    await price(c, first, "1900", {}, owner);
+    await price(c, first, "1800", {}, other);
+    for (const actor of [owner, other]) {
+      const report = await subscriptionCostReport(db, c, actor);
+      expect(report.accounts).toHaveLength(1);
+      expect(report.accounts[0]).toMatchObject({ canEdit: true, ownerUserId: null });
+      expect(report.monthlyTotals[0].amountCents).toBe("1800.0000000");
+    }
+    await expect(price(c, first, "1700", {}, { ...other, canManage: false })).rejects.toMatchObject({ status: 403 });
+    await expect(price(c, first, "1700", {}, { ...owner, readOnly: true })).rejects.toMatchObject({ status: 403 });
+    // Removing authentication connections must not remove the ability to end
+    // a fee that can still be billed by the provider.
+    await db.delete(connectionGrants).where(eq(connectionGrants.companyId, c));
+    await price(c, first, "1700", {}, owner);
+    await price(c, first, "1700", { status: "ended" }, other);
+    expect((await subscriptionCostReport(db, c, owner)).activeCount).toBe(0);
+  });
+  it.each([true, false])("combines editors when verified profiles link accounts (shared first: %s)", async (sharedFirst) => {
+    const c = await company(), service = subscriptionService(db);
+    const personal = await connection(c, "claude-personal", "anthropic");
+    const shared = await connection(c, "claude-shared", "anthropic", null);
+    const personalId = await service.register(personal), sharedId = await service.register(shared);
+    const profile = fixtureRequest({ account: { uuid: "seat" }, organization: { uuid: "org", rate_limit_tier: "default_claude_max_5x" } });
+    const order = sharedFirst ? [[shared, sharedId], [personal, personalId]] as const : [[personal, personalId], [shared, sharedId]] as const;
+    for (const [input, id] of order) await refreshSubscriptionConnection(db, input, id, profile);
+    const report = await subscriptionCostReport(db, c, owner);
+    expect(report.accounts).toHaveLength(1);
+    const id = report.accounts[0].id;
+    await price(c, id, "9500", {}, owner);
+    await price(c, id, "9000", {}, other);
+    expect((await subscriptionCostReport(db, c, other)).accounts[0].canEdit).toBe(true);
+    expect((await subscriptionCostReport(db, c, owner)).monthlyTotals[0].amountCents).toBe("9000.0000000");
+  });
+  it("retains every personal owner without granting managers access to a personal-only fee", async () => {
+    const c = await company(), service = subscriptionService(db);
+    const id = await service.register(await connection(c));
+    expect(await service.register(await connection(c, token(), "openai", "carol"))).toBe(id);
+    await price(c, id, "1800", {}, { userId: "carol", canManage: false });
+    await price(c, id, "1900", {}, owner);
+    await expect(price(c, id, "2000", {}, other)).rejects.toMatchObject({ status: 403 });
+    expect((await subscriptionCostReport(db, c, other)).accounts[0].canEdit).toBe(false);
+  });
+  it("reports only current prices while preserving accumulated revisions for auditing", async () => {
+    const c = await company(), service = subscriptionService(db);
+    const id = await service.register(await connection(c));
+    await db.insert(aiSubscriptionPrices).values(Array.from({ length: 500 }, (_, i) => ({
+      companyId: c, subscriptionId: id, revision: i + 1, plan: `Historic plan ${i}`, amountCents: "1000", source: "user" as const,
+    })));
+    await db.update(aiSubscriptions).set({ revision: 500 }).where(eq(aiSubscriptions.id, id));
+    const report = await subscriptionCostReport(db, c, owner);
+    expect(report.accounts[0].price).toMatchObject({ revision: 500, plan: "Historic plan 499" });
+    expect(report.accounts[0]).not.toHaveProperty("history");
+    expect(JSON.stringify(report)).not.toContain("Historic plan 498");
+    expect(await db.select().from(aiSubscriptionPrices).where(eq(aiSubscriptionPrices.subscriptionId, id))).toHaveLength(501);
   });
   it("never lets an admin overwrite another user's personal price or cross a company boundary", async () => {
     const c = await company(), id = await subscriptionService(db).register(await connection(c));

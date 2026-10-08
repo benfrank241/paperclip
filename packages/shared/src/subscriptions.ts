@@ -89,7 +89,6 @@ export interface SubscriptionAccountReport {
   refreshStatus: "ok" | "unavailable" | null;
   canEdit: boolean;
   price: SubscriptionPrice;
-  history: SubscriptionPrice[];
   usage: SubscriptionUsage;
   agents: { id: string; name: string }[];
 }

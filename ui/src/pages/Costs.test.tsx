@@ -216,6 +216,29 @@ describe("Shared Costs surfaces", () => {
     queryClient.clear();
   });
 
+  it("retries failed account discovery without discarding the last subscription report", async () => {
+    for (const mock of Object.values(costsApiMocks)) mock.mockResolvedValue([]);
+    costsApiMocks.byUser.mockResolvedValue({ activeUserCount: 1, rows: [] });
+    costsApiMocks.summary.mockResolvedValue({ spendCents: 0, budgetCents: 0, pricingComplete: true });
+    costsApiMocks.financeSummary.mockResolvedValue({ netCents: 0, debitCents: 0, creditCents: 0, estimatedDebitCents: 0, eventCount: 0 });
+    const report = await subscriptionsMocks.report();
+    subscriptionsMocks.report.mockResolvedValue({ ...report, canRefresh: true, activeCount: 1, monthlyTotals: [{ currency: "USD", amountCents: "2000", estimatedCount: 1 }] });
+    subscriptionsMocks.refresh.mockRejectedValueOnce(new Error("private connection error")).mockResolvedValue({});
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    root = createRoot(container);
+    await act(async () => root.render(<MemoryRouter><QueryClientProvider client={queryClient}><Costs /></QueryClientProvider></MemoryRouter>));
+    const retry = () => [...container.querySelectorAll("button")].find(button => button.textContent === "Retry account check");
+    await act(async () => { await vi.waitFor(() => expect(retry()).toBeDefined()); });
+    expect(container.textContent).toContain("$20.00/month");
+    expect(container.textContent).not.toContain("private connection error");
+    await act(async () => retry()!.click());
+    await act(async () => { await vi.waitFor(() => expect(retry()).toBeUndefined()); });
+    expect(subscriptionsMocks.refresh).toHaveBeenCalledTimes(2);
+    expect(subscriptionsMocks.refresh).toHaveBeenLastCalledWith("company-1");
+    expect(container.textContent).toContain("$20.00/month");
+    queryClient.clear();
+  });
+
   it("keeps monthly subscription fees through date changes and failed background reloads", async () => {
     for (const mock of Object.values(costsApiMocks)) mock.mockResolvedValue([]);
     costsApiMocks.byUser.mockResolvedValue({ activeUserCount: 1, rows: [] });

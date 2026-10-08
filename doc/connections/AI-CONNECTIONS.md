@@ -749,7 +749,11 @@ currencies are totaled separately; Paperclip does not estimate exchange rates.
 
 Use **Subscriptions → View details → Edit price** to record the amount paid,
 billing cadence, and tracking status. Personal prices are editable by their
-owner; shared prices require AI-connection management permission. Viewers cannot
+owner; shared prices require AI-connection management permission. When the same
+seat is connected both personally and shared, both its personal owners and
+company connection managers can edit the single fee, regardless of discovery
+order. These billing permissions survive disconnecting a connection; they do
+not grant access to its credentials. Viewers cannot
 edit. Updates append an immutable price revision and reject stale concurrent
 edits. Ending or excluding tracking does not cancel the provider subscription.
 Disconnecting a connection also does not prove that billing stopped, so the fee
@@ -768,8 +772,10 @@ prices prevent automatic linking rather than silently choosing one.
 Provider lookups run in the background, with a six-hour attempt cache shared by
 server replicas, at most four active provider lookups per process, a 15-second
 request deadline, and a 256 KiB response limit. Failed checks preserve the last
-observed plan and price. The report reads the database only. Failed background
-UI reloads retain the last loaded values and show a short status message.
+observed plan and price. The report reads the database only and loads just the
+current price for each account; earlier revisions remain stored for auditing.
+Failed background UI reloads retain the last loaded values and show a short
+status message. Failed discovery offers **Retry account check**.
 
 Each new managed subscription run snapshots its subscription ID. Its cost receipt
 inherits that server-derived ID, outside the immutable monetary receipt hash.
@@ -783,7 +789,7 @@ amounts, or consume agent budgets.
 The company-scoped API is documented in OpenAPI:
 
 - `GET /api/companies/:companyId/costs/subscriptions`: current fees and usage for
-  `from`/`to` (inclusive, matching existing cost reports), or `allTime=true`.
+  `from`/`to` (inclusive, matching existing cost reports), or `period=all`.
 - `POST /api/companies/:companyId/costs/subscriptions/refresh`: request background
   discovery for the caller's authorized connections; returns `202` immediately.
 - `PATCH /api/companies/:companyId/costs/subscriptions/:subscriptionId`: save a

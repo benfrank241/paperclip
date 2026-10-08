@@ -1,4 +1,4 @@
-import { and, eq, gte, lte, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { aiSubscriptions, aiSubscriptionPrices, agents, authUsers, companyMemberships, costEvents, type Db } from "@paperclipai/db";
 import { addCents, monthlySubscriptionCents, type SubscriptionCostReport, type SubscriptionPrice, type SubscriptionUsage } from "@paperclipai/shared";
 import { withAccountingReadSnapshot } from "./accounting-transaction.js";
@@ -30,7 +30,10 @@ export async function subscriptionCostReport(db: Db, companyId: string, actor: S
     if (period?.to) conditions.push(lte(costEvents.occurredAt, period.to));
     const [accounts, prices, owners, groups] = await Promise.all([
       tx.select().from(aiSubscriptions).where(eq(aiSubscriptions.companyId, companyId)),
-      tx.select().from(aiSubscriptionPrices).where(eq(aiSubscriptionPrices.companyId, companyId)).orderBy(aiSubscriptionPrices.revision),
+      tx.select({ price: aiSubscriptionPrices }).from(aiSubscriptions).innerJoin(aiSubscriptionPrices, and(
+        eq(aiSubscriptionPrices.companyId, aiSubscriptions.companyId), eq(aiSubscriptionPrices.subscriptionId, aiSubscriptions.id),
+        eq(aiSubscriptionPrices.revision, aiSubscriptions.revision),
+      )).where(and(eq(aiSubscriptions.companyId, companyId), isNull(aiSubscriptions.mergedIntoId))),
       tx.select({ id: authUsers.id, name: authUsers.name }).from(authUsers).innerJoin(companyMemberships, and(
         eq(companyMemberships.principalId, authUsers.id), eq(companyMemberships.companyId, companyId), eq(companyMemberships.principalType, "user"))),
       tx.select({ subscriptionId: costEvents.subscriptionId, billingType: costEvents.billingType,
@@ -48,22 +51,18 @@ export async function subscriptionCostReport(db: Db, companyId: string, actor: S
     const report: SubscriptionCostReport = { canRefresh: !actor.readOnly, asOf: new Date().toISOString(), accounts: [], monthlyTotals: [],
       activeCount: 0, unknownPriceCount: 0, unidentifiedAccountCount: 0,
       api: emptySubscriptionUsage(), subscription: emptySubscriptionUsage(), unknown: emptySubscriptionUsage(), unattributedSubscription: emptySubscriptionUsage() };
-    const histories = new Map<string, SubscriptionPrice[]>();
-    for (const price of prices) {
-      const history = histories.get(price.subscriptionId) ?? [];
-      history.push(priceDto(price)); histories.set(price.subscriptionId, history);
-    }
+    const currentPrices = new Map(prices.map(({ price }) => [price.subscriptionId, priceDto(price)]));
     const ownerNames = new Map(owners.map(owner => [owner.id, owner.name]));
     for (const account of accounts.filter(row => !row.mergedIntoId)) {
-      const history = histories.get(account.id) ?? [];
-      const price = history.find(row => row.revision === account.revision);
+      const price = currentPrices.get(account.id);
       if (!price) throw new Error("Subscription price history is incomplete");
+      const ownerUserId = !account.shared && account.ownerUserIds.length === 1 ? account.ownerUserIds[0] : null;
       report.accounts.push({ id: account.id, provider: account.provider,
-        name: account.ownerUserId && account.ownerUserId !== actor.userId ? `${account.provider} subscription` : account.name,
-        ownerUserId: account.ownerUserId, ownerName: ownerNames.get(account.ownerUserId ?? "") ?? null,
+        name: account.ownerUserIds.length > 0 && (account.shared || !account.ownerUserIds.includes(actor.userId)) ? `${account.provider} subscription` : account.name,
+        ownerUserId, ownerName: ownerNames.get(ownerUserId ?? "") ?? null,
         identityVerified: account.identityVerified, detectedPlan: account.detectedPlan,
         observedAt: account.observedAt?.toISOString() ?? null, lastCheckedAt: account.lastCheckedAt?.toISOString() ?? null,
-        refreshStatus: account.refreshStatus, canEdit: canEditSubscription(account, actor), price, history,
+        refreshStatus: account.refreshStatus, canEdit: canEditSubscription(account, actor), price,
         usage: emptySubscriptionUsage(), agents: [] });
       if (price.status !== "active") continue;
       report.activeCount++;

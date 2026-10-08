@@ -32,6 +32,8 @@ describe("subscription reporting authorization", () => {
     expect((await request(app("agent")).get(path)).status).toBe(403);
     expect((await request(app()).get("/api/companies/other/costs/subscriptions")).status).toBe(403);
     expect((await request(app()).get(`${path}?from=not-a-date`)).status).toBe(400);
+    expect((await request(app()).get(`${path}?period=all`)).status).toBe(200);
+    expect(mocks.report).toHaveBeenLastCalledWith(expect.anything(), companyId, expect.anything(), { allTime: true });
     mocks.decide.mockResolvedValue({ allowed: false });
     expect((await request(app()).get(path)).status).toBe(403);
   });

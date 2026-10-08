@@ -16,11 +16,10 @@ function fixture(): SubscriptionCostReport {
     accounts: [
       { id: "plus", provider: "openai", name: "Goldie’s ChatGPT", ownerUserId: "goldie", ownerName: "Goldie", identityVerified: true,
         detectedPlan: "plus", observedAt: new Date().toISOString(), lastCheckedAt: new Date().toISOString(), refreshStatus: "ok", canEdit: true,
-        price, history: [price], usage: { ...zero, inputTokens: 8000000, cachedInputTokens: 60000000, outputTokens: 1000000, eventCount: 40 }, agents: [{ id: "codie", name: "Codie" }, { id: "fry", name: "Fry" }] },
+        price, usage: { ...zero, inputTokens: 8000000, cachedInputTokens: 60000000, outputTokens: 1000000, eventCount: 40 }, agents: [{ id: "codie", name: "Codie" }, { id: "fry", name: "Fry" }] },
       { id: "max", provider: "anthropic", name: "Shared Claude", ownerUserId: null, ownerName: null, identityVerified: true,
         detectedPlan: "max_5x", observedAt: new Date().toISOString(), lastCheckedAt: new Date().toISOString(), refreshStatus: "ok", canEdit: true,
         price: { ...price, plan: "Claude Max 5x", amountCents: "10000", monthlyCents: "10000", sourceUrl: "https://claude.com/pricing" },
-        history: [{ ...price, plan: "Claude Max 5x", amountCents: "10000", monthlyCents: "10000", sourceUrl: "https://claude.com/pricing" }],
         usage: { ...zero, inputTokens: 2000000, cachedInputTokens: 14000000, outputTokens: 100000, eventCount: 10 }, agents: [{ id: "leela", name: "Leela" }] },
     ],
   };
@@ -36,7 +35,6 @@ function SubscriptionCostsStory({ unknownPrice = false, stale = false }: { unkno
     if (unknownPrice) {
       report.accounts[1].price = { ...report.accounts[1].price, plan: "Claude Max", amountCents: null, monthlyCents: null, source: "unknown", sourceUrl: null };
       report.accounts[1].detectedPlan = "max";
-      report.accounts[1].history = [report.accounts[1].price];
       report.unknownPriceCount = 1; report.monthlyTotals = [{ currency: "USD", amountCents: "2000", estimatedCount: 1 }];
     }
     if (stale) report.accounts.forEach(account => { account.refreshStatus = "unavailable"; account.observedAt = "2026-10-06T10:00:00Z"; });
@@ -51,7 +49,6 @@ function SubscriptionCostsStory({ unknownPrice = false, stale = false }: { unkno
         const patch = JSON.parse(String(init.body));
         account.price = { ...account.price, ...patch, source: "user", sourceUrl: null, revision: account.price.revision + 1,
           monthlyCents: patch.amountCents == null ? null : monthlySubscriptionCents(patch.amountCents, patch.cadence), effectiveAt: new Date().toISOString() };
-        account.history.push(account.price);
         report.monthlyTotals = [];
         report.activeCount = 0; report.unknownPriceCount = 0;
         for (const row of report.accounts) {

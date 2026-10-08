@@ -1,5 +1,5 @@
 {
-  "id": "866f8d25-8ca1-4bf6-8919-f435032e50fc",
+  "id": "bbf377e1-2355-42ba-942c-fc913dce35cc",
   "prevId": "af0b2d33-956b-4b12-8d68-8b4e14c991b2",
   "version": "7",
   "dialect": "postgresql",
@@ -5112,11 +5112,19 @@
           "primaryKey": false,
           "notNull": true
         },
-        "owner_user_id": {
-          "name": "owner_user_id",
-          "type": "text",
+        "owner_user_ids": {
+          "name": "owner_user_ids",
+          "type": "text[]",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
+        "shared": {
+          "name": "shared",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "detected_plan": {
           "name": "detected_plan",

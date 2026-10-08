@@ -12,7 +12,10 @@ export const aiSubscriptions = pgTable("ai_subscriptions", {
   accountKey: text("account_key").notNull(),
   identityVerified: boolean("identity_verified").notNull().default(false),
   name: text("name").notNull(),
-  ownerUserId: text("owner_user_id"),
+  // A paid seat can be connected personally and shared. Retain all billing
+  // editors even after a connection is deleted; disconnecting is not cancellation.
+  ownerUserIds: text("owner_user_ids").array().notNull().default(sql`'{}'::text[]`),
+  shared: boolean("shared").notNull().default(false),
   detectedPlan: text("detected_plan"),
   observedAt: timestamp("observed_at", { withTimezone: true }),
   lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),

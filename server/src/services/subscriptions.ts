@@ -53,13 +53,19 @@ async function withSubscriptionTransaction<T>(db: Db, companyId: string, work: (
   return result;
 }
 
-export function canEditSubscription(account: Pick<Account, "ownerUserId">, actor: SubscriptionActor) {
-  return !actor.readOnly && (account.ownerUserId ? account.ownerUserId === actor.userId : actor.canManage);
+type Ownership = Pick<Account, "ownerUserIds" | "shared">;
+function combineOwnership(a: Ownership, b: Ownership): Ownership {
+  return { ownerUserIds: [...new Set([...a.ownerUserIds, ...b.ownerUserIds])].sort(), shared: a.shared || b.shared };
+}
+
+export function canEditSubscription(account: Ownership, actor: SubscriptionActor) {
+  return !actor.readOnly && (account.ownerUserIds.includes(actor.userId) || (account.shared && actor.canManage));
 }
 
 async function mergeInTransaction(db: Db, companyId: string, source: Account, target: Account, automatic: boolean) {
   if (source.id === target.id) throw conflict("Choose a different subscription to link");
   if (source.provider !== target.provider || source.mergedIntoId || target.mergedIntoId) throw conflict("Choose two current accounts from the same provider");
+  await db.update(aiSubscriptions).set(combineOwnership(source, target)).where(and(eq(aiSubscriptions.id, target.id), eq(aiSubscriptions.companyId, companyId)));
   const prices = await db.select().from(aiSubscriptionPrices).where(and(eq(aiSubscriptionPrices.companyId, companyId), inArray(aiSubscriptionPrices.subscriptionId, [source.id, target.id])));
   const sourcePrice = prices.find(row => row.subscriptionId === source.id && row.revision === source.revision)!;
   const targetPrice = prices.find(row => row.subscriptionId === target.id && row.revision === target.revision)!;
@@ -113,11 +119,23 @@ export function subscriptionService(db: Db) {
       if (!account) {
         [account] = await tx.insert(aiSubscriptions).values({ companyId: input.companyId, provider: input.provider,
           accountKey: identity.accountKey, identityVerified: identity.verified, name: grant.connection.name,
-          ownerUserId: grant.grant.subjectUserId, detectedPlan: identity.plan,
+          ownerUserIds: grant.grant.subjectUserId ? [grant.grant.subjectUserId] : [], shared: grant.grant.kind === "organization", detectedPlan: identity.plan,
         }).returning();
         await tx.insert(aiSubscriptionPrices).values(autoPrice(account, identity.plan, 0));
         await logActivity(tx, { companyId: input.companyId, actorType: "system", actorId: "subscription_reporting",
           action: "subscription.discovered", entityType: "ai_subscription", entityId: account.id, details: { provider: input.provider } }, publications);
+      }
+      // The union is independent of discovery order. Credential sharing does
+      // not transfer personal ownership, and personal reuse does not remove
+      // managers' authority over a fee already connected to the company.
+      const ownership = combineOwnership(account, {
+        ownerUserIds: grant.grant.subjectUserId ? [grant.grant.subjectUserId] : [], shared: grant.grant.kind === "organization",
+      });
+      if (ownership.shared !== account.shared || ownership.ownerUserIds.join() !== account.ownerUserIds.join()) {
+        [account] = await tx.update(aiSubscriptions).set(ownership).where(eq(aiSubscriptions.id, account.id)).returning();
+        await logActivity(tx, { companyId: input.companyId, actorType: "system", actorId: "subscription_reporting",
+          action: "subscription.ownership_updated", entityType: "ai_subscription", entityId: account.id,
+          details: { shared: ownership.shared, ownerCount: ownership.ownerUserIds.length } }, publications);
       }
       if (observed && previous && previous.id !== account.id && !previous.identityVerified) {
         await mergeInTransaction(tx, input.companyId, previous, account, true);
@@ -149,7 +167,7 @@ export function subscriptionService(db: Db) {
     return withSubscriptionTransaction(db, companyId, async (tx, publications) => {
       const [account] = await tx.select().from(aiSubscriptions).where(and(eq(aiSubscriptions.companyId, companyId), eq(aiSubscriptions.id, id)));
       if (!account) throw notFound("Subscription not found");
-      if (!canEditSubscription(account, actor)) throw forbidden("Only the owner can edit a personal subscription");
+      if (!canEditSubscription(account, actor)) throw forbidden("Only subscription owners or managers of shared accounts can edit prices");
       if (account.mergedIntoId || account.revision !== input.expectedRevision) throw conflict("This subscription changed. Reload it before saving.");
       const revision = account.revision + 1;
       await tx.insert(aiSubscriptionPrices).values({ companyId, subscriptionId: id, revision, plan: input.plan,
