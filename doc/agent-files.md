@@ -39,8 +39,10 @@ workspace sync, Git staging, or task deliverables.
 
 Sandbox transfer scratch lives separately under
 `.paperclip-runtime/paperclip-runner/agent-file-transfers/<agent>/<run>/`.
-Both native sync and the command fallback keep transfer files outside
-`AGENT_HOME`, including recovery after controller restart. Cleanup removes
+Workspace-staging transfer scratch stays outside `AGENT_HOME`, including
+recovery after controller restart. Remote warm Codex checkpoints may temporarily
+stage changed-file payloads under `AGENT_HOME/.paperclip-runtime/checkpoint-*`;
+these are checkpoint scratch, not managed personal files. Cleanup removes
 only the original materialization's agent directory and transfer scratch
 through its owned lease. A later warm turn keeps that original materialization
 identity; it does not grant collection or cleanup of another run's files.
