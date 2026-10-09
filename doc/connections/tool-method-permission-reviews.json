@@ -1823,7 +1823,7 @@
         "https://api.resend.com/.well-known/oauth-authorization-server"
       ],
       "reviewedAt": "2026-10-09",
-      "liveProof": "Fresh OAuth connection succeeded under the previously approved paperclip/full_access grant. Paperclip catalog exposed 132 actions (55 Read, 77 Write). List Domains succeeded twice via UI Test as Connector Tester and returned one entry each. After the test, all action permissions were Off and stayed Off after reload; human audience Just me and agent audience Just agents I pick with zero selected also persisted.",
+      "liveProof": "Fresh OAuth connection succeeded under the previously approved paperclip/full_access grant. Paperclip catalog exposed 132 actions (55 Read, 77 Write). List Domains succeeded twice via UI Test as Connector Tester and returned one entry each. After the test, all action permissions were Off and stayed Off after reload; human audience Just me and agent audience Just agents I pick with zero selected also persisted. Final fresh setup after the access-marker refinement again preserved Just me and zero agents; one List Domains UI Test passed in 1.4s and final reload confirmed all 132 actions Off.",
       "evidenceLimit": "Test execution was through Paperclip's UI Test dialog as Connector Tester, not a real agent adapter/task. The bounded read returned one entry; names and identifiers are omitted. No provider writes, deletes, sends, or agent runs occurred. Paperclip Off policies do not narrow the provider-side full_access OAuth grant."
     },
     {
