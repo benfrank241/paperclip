@@ -964,6 +964,20 @@ export function AgentDetail() {
 
   useEffect(() => {
     if (!agent) return;
+    if (routeAgentRef !== canonicalAgentRef) {
+      // Reuse the authorized response across the alias redirect. An empty
+      // alias query would unmount the selected run and discard its mutations.
+      queryClient.setQueryData(
+        [...queryKeys.agents.detail(canonicalAgentRef), lookupCompanyId ?? null],
+        agent,
+      );
+      if (lookupCompanyId !== agent.companyId) {
+        queryClient.setQueryData(
+          [...queryKeys.agents.detail(canonicalAgentRef), agent.companyId],
+          agent,
+        );
+      }
+    }
     if (urlRunId) {
       if (routeAgentRef !== canonicalAgentRef) {
         navigate(`/agents/${canonicalAgentRef}/runs/${urlRunId}`, { replace: true });
@@ -976,7 +990,7 @@ export function AgentDetail() {
       navigate(agentDetailHref(canonicalAgentRef, canonicalTab), { replace: true });
       return;
     }
-  }, [agent, routeAgentRef, canonicalAgentRef, urlRunId, urlTab, activeView, legacyAuditSection, navigate]);
+  }, [agent, routeAgentRef, canonicalAgentRef, urlRunId, urlTab, activeView, legacyAuditSection, navigate, lookupCompanyId, queryClient]);
 
   useEffect(() => {
     if (!agent?.companyId || agent.companyId === selectedCompanyId) return;
