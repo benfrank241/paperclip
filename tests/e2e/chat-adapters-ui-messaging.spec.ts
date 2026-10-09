@@ -1355,12 +1355,26 @@ test.describe("Exact failed chat run retry", () => {
           body: Record<string, unknown>;
         }> = [];
         const destinations: string[] = [];
+        let releaseCanonicalRead = () => {};
+        const canonicalRead = new Promise<void>((resolve) => {
+          releaseCanonicalRead = resolve;
+        });
+        page.once("close", releaseCanonicalRead);
         page.on("framenavigated", (frame) => {
           if (frame === page.mainFrame()) destinations.push(frame.url());
         });
         await page.route("**/api/**", async (route) => {
           const url = new URL(route.request().url());
           const pathname = url.pathname;
+          if (surface === "agent run" && outcome === "denied"
+            && pathname === "/api/agents/maya" && route.request().method() === "GET") {
+            // Canonical URL refresh must preserve the selected run and its
+            // retry feedback while the alias lookup is still pending.
+            const response = await route.fetch();
+            await canonicalRead;
+            if (!page.isClosed()) await route.fulfill({ response });
+            return;
+          }
           if (pathname === "/api/instance/settings/experimental") {
             await fulfill(route, {
               enableChatConnectors: true,
@@ -1455,6 +1469,10 @@ test.describe("Exact failed chat run retry", () => {
         });
         if (outcome === "denied") {
           await expect(page.getByText(denial, { exact: true })).toBeVisible();
+          if (surface === "agent run") {
+            await page.screenshot({ path: testInfo.outputPath("exact-retry-denied-during-canonical-refresh.png") });
+          }
+          releaseCanonicalRead();
           if (surface !== "agent run") {
             await expect(
               page.getByText("Run retry failed", { exact: true }),
