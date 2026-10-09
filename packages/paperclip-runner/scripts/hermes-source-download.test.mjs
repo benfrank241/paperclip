@@ -68,3 +68,47 @@ test("long throttling delays fail visibly rather than running an unbounded setup
   }), /rate limit expires/);
   assert.equal(calls, 1);
 });
+
+test("a progressing body may use the remaining overall download deadline", async () => {
+  let time = 0;
+  const allowances = [];
+  const bytes = await downloadPinnedHermesArchive(version, {
+    now: () => time,
+    timeout: milliseconds => { allowances.push(milliseconds); return new AbortController().signal; },
+    request: async () => ({ ok: true, arrayBuffer: async () => { time = 60_000; return archive; } }),
+  });
+  assert.deepEqual(bytes, archive);
+  assert.deepEqual(allowances, [120_000]);
+});
+
+test("transport failures during request and body reading retry within the same deadline", async () => {
+  let calls = 0;
+  let time = 0;
+  const allowances = [];
+  const bytes = await downloadPinnedHermesArchive(version, {
+    now: () => time,
+    timeout: milliseconds => { allowances.push(milliseconds); return new AbortController().signal; },
+    request: async () => {
+      calls++;
+      time += 10_000;
+      if (calls === 1) throw new TypeError("fetch failed");
+      if (calls === 2) return { ok: true, arrayBuffer: async () => { throw new TypeError("body interrupted"); } };
+      return new Response(archive);
+    },
+    wait: async milliseconds => { time += milliseconds; },
+  });
+  assert.deepEqual(bytes, archive);
+  assert.equal(calls, 3);
+  assert.deepEqual(allowances, [120_000, 109_000, 97_000]);
+});
+
+test("an expired transport deadline cannot open another request", async () => {
+  let calls = 0;
+  let time = 0;
+  await assert.rejects(downloadPinnedHermesArchive(version, {
+    now: () => time,
+    request: async () => { calls++; time = 120_000; throw new TypeError("fetch failed"); },
+    wait: async () => assert.fail("The expired download cannot retry"),
+  }), /deadline exceeded/);
+  assert.equal(calls, 1);
+});

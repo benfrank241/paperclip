@@ -10,19 +10,38 @@ import { hermesProvisioningConfig } from "./hermes-provisioning-config.mjs";
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 
 /** Download the same pinned GitHub archive without the unauthenticated API quota. */
-export async function downloadPinnedHermesArchive(version, { request = fetch, wait = delay } = {}) {
-  const deadline = Date.now() + 120_000;
+export async function downloadPinnedHermesArchive(version, {
+  request = fetch, wait = delay, now = Date.now, timeout = AbortSignal.timeout,
+} = {}) {
+  const deadline = now() + 120_000;
+  const retryWait = async (waitMs, failure) => {
+    if (waitMs > 30_000) {
+      throw new Error(`${failure}; retry setup later after the download service's rate limit expires`);
+    }
+    if (waitMs + 1 >= deadline - now()) throw new Error(`${failure}; overall download deadline exceeded; retry setup later`);
+    await wait(waitMs);
+  };
   const url = `https://codeload.github.com/NousResearch/hermes-agent/legacy.tar.gz/${version.commit}`;
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const remaining = deadline - Date.now();
+    const remaining = deadline - now();
     if (remaining <= 0) throw new Error("Hermes source download deadline exceeded; retry setup later");
-    const response = await request(url, { signal: AbortSignal.timeout(Math.min(30_000, remaining)) });
+    let response;
+    let bytes;
+    try {
+      response = await request(url, { signal: timeout(remaining) });
+      if (response.ok) bytes = Buffer.from(await response.arrayBuffer());
+    } catch {
+      if (deadline <= now()) throw new Error("Hermes source download deadline exceeded; retry setup later");
+      const failure = `Hermes source download failed: network error after ${attempt} attempts`;
+      if (attempt === 3) throw new Error(`${failure}; retry setup later`);
+      await retryWait(attempt * 1_000, failure);
+      continue;
+    }
     if (response.ok) {
-      const bytes = Buffer.from(await response.arrayBuffer());
       if (digest(bytes) !== version.archiveSha256) throw new Error("Hermes source digest mismatch");
       return bytes;
     }
-    await response.body?.cancel();
+    await response.body?.cancel().catch(() => undefined);
     const failure = `Hermes source download failed: HTTP ${response.status}`;
     if (![429, 500, 502, 503, 504].includes(response.status) || attempt === 3) {
       throw new Error(`${failure}${attempt > 1 ? ` after ${attempt} attempts` : ""}; retry setup later`);
@@ -31,11 +50,8 @@ export async function downloadPinnedHermesArchive(version, { request = fetch, wa
     const seconds = retryAfter === null ? NaN : Number(retryAfter);
     const retryAt = retryAfter === null ? NaN : Date.parse(retryAfter);
     const waitMs = Number.isFinite(seconds) ? Math.max(0, seconds * 1_000)
-      : Number.isFinite(retryAt) ? Math.max(0, retryAt - Date.now()) : attempt * 1_000;
-    if (waitMs > 30_000 || waitMs + 1 >= deadline - Date.now()) {
-      throw new Error(`${failure}; retry setup later after the download service's rate limit expires`);
-    }
-    await wait(waitMs);
+      : Number.isFinite(retryAt) ? Math.max(0, retryAt - now()) : attempt * 1_000;
+    await retryWait(waitMs, failure);
   }
 }
 

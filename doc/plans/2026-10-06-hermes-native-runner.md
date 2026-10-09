@@ -2017,3 +2017,54 @@ The TypeScript builds and vendor dependency check pass; six selected vendored
 modules, including the sidecar, match the freshly built Runner byte-for-byte.
 No local Rust or Docker build runs. Another native browser attempt is required
 against these verified artifacts before accepting rendered steering behavior.
+
+
+### 2026-10-09 native steering and queue browser acceptance
+
+A clean Mac production-path journey at `60aba2d58d79c0e8773f02bfe2de59df795fd9a9`
+passes all 38 checks and six visual inspections. Reasoning and assistant text
+reach the browser before completion. The canonical native event retains its
+progress channel. The real Steer button delivers the correction to the same
+active turn; the original commentary remains visible. A queued follow-up stays
+deferred across reload, then runs only after the first turn ends. Both native
+runs succeed with the same restored session. Authorized file downloads match,
+and expanded read output retains the corrected file contents after reload.
+The owned server exits cleanly.
+
+Evidence is retained in
+`/private/tmp/hermes-retry-qa-20261008/ctrl59c5/proof.json`, with the script,
+38-check evidence receipt, native events and six inspected screenshots beside
+it. The script SHA-256 is
+`170396b3f703d41194f6a3087c9e9f42712dbfea99a757a7cdcfc4eff6e4560f`.
+The cloud-built binary has exactly the current Rust subtree. Its older artifact
+closure and the independently verified current Mac materialization are recorded
+separately. Inference is scripted and credential-free; this is real browser and
+Runner-path proof, not paid-model or Daytona qualification. Earlier failures
+remain failed. In particular, attempt four completed both turns but used
+positional disclosure locators that shifted when panels opened. Attempt five
+uses the current first collapsed disclosure and preserves the same assertions.
+
+### 2026-10-09 bounded native controls and setup review fixes
+
+Early steering waits for the owning native turn acknowledgement, with a
+five-second timeout and immediate cancellation when the turn ends. Five new
+regressions reproduce the prior rejection, then cover delayed acknowledgement,
+foreign-session rejection, cancellation, stream closure, settlement and timeout.
+Question forms reserve ACPX's 256 KiB encoded response budget before publication.
+Their text limits account for all question/option IDs and worst-case JSON
+escaping. Canonical validation uses that same persisted limit. Three regressions
+reproduce oversized accepted responses, then prove all permitted text, custom
+and multiple-choice responses fit the transport bound. All 107 focused Runner
+assertions and Runner TypeScript pass.
+
+Source downloads keep one two-minute deadline across the request, body and
+bounded retries. A progressing download is no longer cut off at 30 seconds.
+Transport failures retry within the remaining budget; permanent failures and
+digest mismatches do not retry. All eight download assertions pass. The full
+messaging and legacy-continuation browser files pass 35 cases. Both sidebar
+links handle the optional announcement through its normal dismissal button;
+company isolation, history navigation and the original retry assertions remain.
+The legacy continuation CI failure remains a separate failed measurement.
+Current-head full CI, remaining review, paid/subscription credentials, clean
+consumer and actual Daytona qualification are still required. No local Docker
+or Rust build, provider credential or paid inference is used in these checks.
