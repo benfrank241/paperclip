@@ -797,6 +797,7 @@ export function AgentDetail() {
   const [configSaving, setConfigSaving] = useState(false);
   const saveConfigActionRef = useRef<(() => void) | null>(null);
   const cancelConfigActionRef = useRef<(() => void) | null>(null);
+  const previousSelectedCompanyId = useRef(selectedCompanyId);
   const { isMobile } = useSidebar();
   const routeAgentRef = agentId ?? "";
   const routeCompanyId = useMemo(() => {
@@ -993,9 +994,13 @@ export function AgentDetail() {
   }, [agent, agentCompany, companyPrefix, routeAgentRef, canonicalAgentRef, urlRunId, urlTab, activeView, legacyAuditSection, navigate, queryClient]);
 
   useEffect(() => {
+    const manualSelectionChanged = selectionSource === "manual"
+      && previousSelectedCompanyId.current !== selectedCompanyId;
+    previousSelectedCompanyId.current = selectedCompanyId;
     if (!agent?.companyId || agent.companyId === selectedCompanyId) return;
-    // Let an explicit organization switch finish its navigation first.
-    if (selectionSource === "manual") return;
+    // Yield only for the selection change itself. Later agent links and history
+    // navigation must follow the authorized company even if the source is manual.
+    if (manualSelectionChanged) return;
     // The route owns selection until canonical navigation reaches this company.
     // Competing with Layout's old-prefix selection can cause an update loop.
     if (routeCompanyId && routeCompanyId !== agent.companyId) return;
