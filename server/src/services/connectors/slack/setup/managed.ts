@@ -27,6 +27,8 @@ export function createManagedSlackSetup(store: SlackRegistrationStore, grants: R
         await completion.resumeLocked(endpointId, actor, lease);
         return;
       }
+      // Keep reinstall intent durable even if this dispatch fails or the process exits.
+      if (needsReinstall) await store.setFailure(row, "install", row.errorCode!, lease);
       const { grant } = await grants.token(input.grantId, row.companyId, actor);
       try {
         await lease.assertOwned();
@@ -41,7 +43,7 @@ export function createManagedSlackSetup(store: SlackRegistrationStore, grants: R
       } catch (error) {
         const code = object(object(error).details).code;
         const safe = typeof code === "string" ? code : "slack_install_failed";
-        await store.setFailure(row, row.status, safe, lease);
+        await store.setFailure(row, needsReinstall ? "install" : row.status, safe, lease);
         await store.audit(row, actor, "installation_failed", safe);
         fallback = ["slack_approval_required", "slack_approval_pending", "slack_approval_denied"].includes(safe);
         return;

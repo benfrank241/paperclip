@@ -4217,6 +4217,16 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         expect(f.provider.mock.calls.filter(([url]) => String(url).endsWith("apps.managedInstall"))).toHaveLength(2);
         expect(f.provider.mock.calls.filter(([url]) => String(url).endsWith("apps.manifest.create"))).toHaveLength(1);
       });
+      it("retains reinstall intent after a provider failure instead of retrying rejected credentials", async () => {
+        const f = await managedFixture(); const scopes = f.state.grantedScopes;
+        f.state.grantedScopes = []; await f.provision();
+        f.state.managedError = "internal_error"; await f.provision();
+        expect((await f.service.get(f.endpoint.id)).setup.slackRegistration).toMatchObject({ status: "install", errorCode: "slack_provider_failure" });
+        f.state.managedError = null; f.state.grantedScopes = scopes; await f.provision();
+        expect((await f.service.get(f.endpoint.id)).setup.slackRegistration?.status).toBe("configured");
+        expect(f.provider.mock.calls.filter(([url]) => String(url).endsWith("apps.managedInstall"))).toHaveLength(3);
+        expect(f.provider.mock.calls.filter(([url]) => String(url).endsWith("apps.manifest.create"))).toHaveLength(1);
+      });
       it("clears a manager reconnect error after renewing the bound grant", async () => {
         const f = await managedFixture(); f.state.managedError = "invalid_auth"; await f.provision();
         expect((await f.service.get(f.endpoint.id)).setup.slackRegistration?.errorCode).toBe("slack_manager_reauthorize");
