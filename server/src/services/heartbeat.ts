@@ -1,3 +1,4 @@
+import { isAgentAwaitingSetup } from "../modules/agent-lifecycle/index.js";
 import { agentExecutionsHaveStopped } from "./agent-execution-stop.js";
 import {
   NON_RETRYABLE_PREFLIGHT_FAILURE_CODES,
@@ -2538,10 +2539,6 @@ export function heartbeatService(
         logger.warn({ err, runId: run.id }, "failed to resume saved execution-wait message");
       });
     }
-  }
-
-  function isAgentAwaitingSetup(agent: typeof agents.$inferSelect) {
-    return ["preparing", "verifying", "resuming"].includes(agent.lifecycleState) && agent.lifecycleHolds.length === 0;
   }
 
   async function getAgentInvokability(
