@@ -1850,3 +1850,37 @@ Foundation `7a0329466485b40f33f38889964da4baefb58ec7` and core qualification
 Native `a8805d61af611574046139377801fcb07e35dc25` still needs diagnosis of a
 first-test route import timeout and a denied-retry browser failure; previous
 CI verdicts are retained. Full release qualification remains incomplete.
+
+### 2026-10-09 exact-retry browser repair and native fixture correction
+
+Native CI at `a8805d61af611574046139377801fcb07e35dc25` records a failed
+denied-retry browser assertion. Its screenshot has no retry denial. A controlled
+public API alias refresh reproduces the underlying unmount: the selected
+Retry button detaches while canonical agent data loads. The agent page now
+primes the company-scoped canonical cache from its authorized response before
+redirecting. The same delayed-response fixture then passes all original retry
+assertions. All nine queued, deferred and denied cases pass across the agent
+run, Inbox and Legacy Inbox. The denial screenshot is visually inspected; it
+shows one readable error on the original selected run while refresh is pending.
+This is shared UI proof with an isolated test database, not Hermes model proof.
+
+The serialized comment-wakeup suite's cold route imports now run in its
+bounded 30-second per-test setup hook after mock reset. All assertions and the
+15-second request deadline remain unchanged. All 36 tests and server TypeScript
+pass. The first local attempt is retained as a socket-permission failure. UI
+TypeScript and token gates pass. A separate browser attempt never starts its
+server because the temporary macOS socket path is too long; that failure is
+retained, and the successful nine-case run uses a shorter private path.
+
+Cloud native fixture run `37906431079` tests published source
+`17ce15bc44f75f33365b405967ffaffd67c198fe`. The new assertion reads message
+IDs from the payload instead of the canonical event envelope and fails with
+undefined identities. Its verdict remains failed. The fixture now requires
+string envelope identities, distinct initial/final messages, and exact final
+delta/snapshot identity. Fresh cloud execution is required before accepting
+this native fix. No previous fixture or browser pass closes that gate.
+
+After terminal server results and empty open-file checks, only the four owned
+browser scratch roots are removed. Logs, screenshots, failed attempts and
+required runtime assets remain available. No local Docker or Rust build runs,
+and no paid inference or credential transfer occurs in these browser checks.
