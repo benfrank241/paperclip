@@ -8,8 +8,8 @@ import type { QualifiedAcpxProfile } from "./qualified-profiles.js";
 // Pins are produced by explicit provisioning and reviewed alongside the bridge.
 // An unbuilt target has no admission pin; it must not inherit a different ABI.
 export const HERMES_CLOSURES: Readonly<Record<string, string>> = Object.freeze({
-  "darwin-arm64": "690b3b84a543b04a47a6859969bd613ced61d68776d80b57c85ca424bde31829",
-  "linux-x64": "6166fadd24dae41b9fdfd994e6c7bc129e9317ed252b7dabdd777b691ab47771",
+  "darwin-arm64": "bfcecaac5e187b083955eba33490ac6772dc60ced8dec830b97f9d70456b1c3e",
+  "linux-x64": "ce8ffb831b113e569f537a37bd3841e561c6f157959959fbba8c6e5b7898f6f8",
 });
 export async function verifyHermesInstallation(profile: QualifiedAcpxProfile): Promise<VerifiedAcpxInstallation> {
   if (profile.agent !== "hermes" || profile.agentServerPackage !== "builtin:hermes-acp" || profile.agentServerVersion !== "1" || profile.agentRuntimePackage !== "native:hermes" || profile.agentRuntimeVersion !== "v2026.9.24") throw new Error("Hermes native profile identity mismatch");
