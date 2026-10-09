@@ -1,3 +1,4 @@
+import { agentExecutionsHaveStopped } from "./agent-execution-stop.js";
 import {
   NON_RETRYABLE_PREFLIGHT_FAILURE_CODES,
   isHeartbeatRunTerminalStatus,
@@ -2537,6 +2538,10 @@ export function heartbeatService(
         logger.warn({ err, runId: run.id }, "failed to resume saved execution-wait message");
       });
     }
+  }
+
+  function isAgentAwaitingSetup(agent: typeof agents.$inferSelect) {
+    return ["preparing", "verifying", "resuming"].includes(agent.lifecycleState) && agent.lifecycleHolds.length === 0;
   }
 
   async function getAgentInvokability(
@@ -10564,6 +10569,13 @@ export function heartbeatService(
               ${JSON.stringify({ startupPreparationSettledAt: new Date().toISOString() })}::jsonb`,
           }).where(and(eq(heartbeatRuns.id, run.id), eq(heartbeatRuns.status, "cancelled")));
         }
+        await db.update(heartbeatRuns).set({
+          executionStage: sql`case when ${heartbeatRuns.status} = 'cancelled' then 'settled' else ${heartbeatRuns.executionStage} end`,
+          controllerLeaseExpiresAt: null,
+        }).where(and(eq(heartbeatRuns.id, run.id), eq(heartbeatRuns.runtimeMode, "legacy"),
+          eq(heartbeatRuns.controllerBootId, legacyControllerBootId),
+          inArray(heartbeatRuns.status, ["succeeded", "failed", "cancelled", "timed_out", "interrupted"])));
+
       } finally {
         controllerLease.stop();
         activeRunExecutions.delete(run.id);
@@ -11147,7 +11159,6 @@ export function heartbeatService(
     reason = "Cancelled due to agent pause",
     errorCode = "cancelled",
   ) {
-    const agent = await getAgent(agentId);
     const runs = await db
       .select()
       .from(heartbeatRuns)
@@ -11158,67 +11169,29 @@ export function heartbeatService(
         ),
       );
 
-    for (const run of runs) {
-      const stopOwnership =
-        run.runtimeMode !== "native"
-          ? captureAdapterStopOwnership(run.id)
-          : undefined;
-      try {
-        if (stopOwnership?.control) {
-          await cancelRunInternal(run.id, reason, { errorCode });
-          continue;
-        }
-        if (run.runtimeMode === "native") {
-          await db.update(heartbeatRuns).set({ resultJson:
-            sql`coalesce(${heartbeatRuns.resultJson}, '{}'::jsonb) || ${JSON.stringify({ cancellation: requestedRunCancellation({}, reason) })}::jsonb`,
-          }).where(and(eq(heartbeatRuns.id, run.id), eq(heartbeatRuns.status, run.status)));
-          await cancelHeartbeatNativeRun({
-            db,
-            runId: run.id,
-            reason,
-            runtimeMode: run.runtimeMode,
-          });
-        }
-        const persistedCancellationResult =
-          run.runtimeMode === "native"
-            ? await getRun(run.id).then((current) =>
-                parseObject(current?.resultJson),
-              )
-            : parseObject(run.resultJson);
-        await setRunStatus(run.id, "cancelled", {
-          finishedAt: new Date(),
-          error: reason,
-          errorCode,
-          resultJson: {
-            ...persistedCancellationResult,
-            ...(agent ? mergeRunStopMetadataForAgent(agent, "cancelled", {
-              resultJson: persistedCancellationResult, errorCode, errorMessage: reason,
-            }) : {}),
-            cancellation: readRunCancellation(persistedCancellationResult) ?? requestedRunCancellation({}, reason),
-          },
-        });
-
-        await setWakeupStatus(run.wakeupRequestId, "cancelled", {
-          finishedAt: new Date(),
-          error: reason,
-        });
-
-        const running = runningProcesses.get(run.id);
-        if (running) {
-          await terminateHeartbeatRunProcess({
-            pid: running.child.pid,
-            processGroupId: running.processGroupId,
-            graceMs: Math.max(1, running.graceSec) * 1000,
-          });
-        }
-        runningProcesses.delete(run.id);
-        await releaseIssueExecutionAndPromote(run);
-      } finally {
-        stopOwnership?.release();
-      }
-    }
+    for (const run of runs) await cancelRunInternal(run.id, reason, { errorCode });
 
     return runs.length;
+  }
+
+  async function stopInvocationsForAgents(agentIds: string[], reason: string) {
+    await cancelInvocationsForAgentsInternal(agentIds, reason);
+    const runs = await db.select().from(heartbeatRuns).where(inArray(heartbeatRuns.agentId, agentIds));
+    const leasesToRelease = await db.select({ runId: environmentLeases.heartbeatRunId }).from(environmentLeases)
+      .innerJoin(heartbeatRuns, eq(heartbeatRuns.id, environmentLeases.heartbeatRunId))
+      .where(and(inArray(heartbeatRuns.agentId, agentIds), eq(heartbeatRuns.status, "cancelled"),
+        inArray(environmentLeases.status, ["active", "pending_cleanup"])));
+    const needsRelease = new Set(leasesToRelease.map(lease => lease.runId));
+    for (const run of runs) {
+      if (!isHeartbeatRunTerminalStatus(run.status) || liveRunExecutions.has(run.id) ||
+          adapterExecutionControls.has(run.id) || processRunCancellationSettlements.has(run.id)) return false;
+      if (needsRelease.has(run.id)) {
+        // Retry cleanup even after cancellation made the run terminal.
+        await releaseEnvironmentLeasesForRun({ runId: run.id, companyId: run.companyId,
+          agentId: run.agentId, status: run.status, providerResourceDisposition: "destroy" });
+      }
+    }
+    return agentExecutionsHaveStopped(db, agentIds);
   }
 
   async function cancelPendingWakeupsForAgentsInternal(
@@ -11297,6 +11270,7 @@ export function heartbeatService(
   }
 
   return {
+    stopInvocationsForAgents,
     waitForRunExecutionDrain: async (
       runId: string,
       options: { timeoutMs?: number; intervalMs?: number } = {},
