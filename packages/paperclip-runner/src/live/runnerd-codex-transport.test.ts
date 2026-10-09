@@ -2050,6 +2050,12 @@ it("restores provider identity and streamed text from a canonical delta", () => 
     .toMatchObject({ threadId: "root-thread", turnId: "provider-turn", delta: "Reading Gmail", itemId: "message-1" });
 });
 
+it("keeps a flat steering acknowledgement recognizable for deduplication", () => {
+  const receipt = { kind: "steering_acknowledgement", correlationId: "steer-1", status: "accepted" };
+  expect(rehydrateRunnerdItemNotification(receipt, "opened-thread", "provider-turn"))
+    .toEqual({ ...receipt, threadId: "opened-thread", turnId: "provider-turn" });
+});
+
 it("rehydrates a canonical agent item for the strict Codex facade", () => {
   expect(
     rehydrateRunnerdItemNotification(
