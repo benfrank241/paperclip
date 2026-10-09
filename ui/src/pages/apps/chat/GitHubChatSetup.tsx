@@ -5,6 +5,7 @@ import type { GitHubAppWizardState } from "@paperclipai/shared";
 import { agentsApi } from "@/api/agents";
 import { chatEndpointsApi } from "@/api/chatEndpoints";
 import { githubChatApi } from "@/api/githubChat";
+import { projectsApi } from "@/api/projects";
 import { toolsApi } from "@/api/tools";
 import { AgentSelect } from "@/components/AgentMultiSelect";
 import { GitHubAgentTrustWarning } from "@/components/GitHubAgentTrustWarning";
@@ -85,6 +86,7 @@ export function GitHubChatSetup() {
     "personal",
   );
   const [ownerLogin, setOwnerLogin] = useState("");
+  const [customOrganization, setCustomOrganization] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [submitManifest, setSubmitManifest] = useState(false);
@@ -134,6 +136,36 @@ export function GitHubChatSetup() {
     (agent) => agent.id === (bot?.assignedAgentId ?? agentId),
   );
   const state = identityOnly ? undefined : progress.data;
+  const choosingAccount = !!bot && !identityOnly && !existing && state?.state === "create";
+  const repositories = useQuery({
+    queryKey: ["project-repositories", selectedCompanyId],
+    queryFn: () => projectsApi.repositoryOptions(selectedCompanyId!),
+    enabled: !!selectedCompanyId && choosingAccount,
+    staleTime: 30_000,
+  });
+  const connectedBots = useQuery({
+    queryKey: queryKeys.chatEndpoints.list(selectedCompanyId!),
+    queryFn: () => chatEndpointsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId && choosingAccount,
+    staleTime: 30_000,
+  });
+  const organizations = new Map<string, string>();
+  for (const repository of repositories.data?.repositories ?? []) {
+    if (repository.ownerType !== "organization") continue;
+    const login = repository.fullName.split("/")[0];
+    organizations.set(login.toLowerCase(), login);
+  }
+  for (const endpoint of connectedBots.data ?? []) {
+    const github = endpoint.setup?.github;
+    if (endpoint.provider === "github" && ["active", "paused"].includes(endpoint.status) &&
+        github?.ownerType === "organization" && github.ownerLogin) {
+      organizations.set(github.ownerLogin.toLowerCase(), github.ownerLogin);
+    }
+  }
+  const knownOrganizations = [...organizations.values()].sort((a, b) => a.localeCompare(b));
+  const knownOwner = organizations.get(ownerLogin.toLowerCase());
+  const accountChoice = ownerType === "personal" ? "personal"
+    : !customOrganization && knownOwner ? `organization:${knownOwner}` : "organization";
   const deliveryVerifiedWhileChecking =
     state?.state === "verify" &&
     !!bot?.setup?.webhookVerifiedAt &&
@@ -167,6 +199,7 @@ export function GitHubChatSetup() {
       if (bot.setup?.github?.ownerType)
         setOwnerType(bot.setup.github.ownerType);
       setOwnerLogin(bot.setup?.github?.ownerLogin ?? "");
+      setCustomOrganization(false);
       if (bot.setup?.github?.appName) setName(bot.setup.github.appName);
     }
   }, [
@@ -607,17 +640,29 @@ export function GitHubChatSetup() {
             <select
               id="github-owner-type"
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              value={ownerType}
+              value={accountChoice}
               disabled={busy || !!state?.registration}
-              onChange={(event) =>
-                setOwnerType(event.target.value as typeof ownerType)
-              }
+              onChange={(event) => {
+                const choice = event.target.value;
+                setOwnerType(choice === "personal" ? "personal" : "organization");
+                setCustomOrganization(choice === "organization");
+                if (choice.startsWith("organization:")) setOwnerLogin(choice.slice("organization:".length));
+                else if (choice === "organization") setOwnerLogin("");
+              }}
             >
               <option value="personal">My account</option>
-              <option value="organization">An organization</option>
+              {knownOrganizations.map((login) => (
+                <option key={login.toLowerCase()} value={`organization:${login}`}>{login}</option>
+              ))}
+              <option value="organization">Another organization</option>
             </select>
+            {(repositories.isError || connectedBots.isError) && (
+              <p role="alert" className="text-sm text-destructive">
+                Could not load some connected GitHub accounts. Choose Another organization to enter a name.
+              </p>
+            )}
           </div>
-          {ownerType === "organization" && (
+          {accountChoice === "organization" && (
             <div className="space-y-2">
               <Label htmlFor="github-owner-login">Organization</Label>
               <Input
@@ -633,7 +678,6 @@ export function GitHubChatSetup() {
             <Label htmlFor="github-app-name">App name</Label>
             <Input
               id="github-app-name"
-              aria-describedby="github-app-name-help"
               disabled={busy || !!state?.registration}
               maxLength={34}
               value={
@@ -644,15 +688,7 @@ export function GitHubChatSetup() {
               }
               onChange={(event) => setName(event.target.value)}
             />
-            <p id="github-app-name-help" className="text-xs text-muted-foreground">
-              Creates your own GitHub App. Its name determines the @mention; GitHub confirms the final handle.
-            </p>
           </div>
-          <p className="text-sm text-muted-foreground">
-            GitHub will ask you to approve creation and select repositories.
-            This connects {bot.assignedAgentName}’s GitHub tools for authorized
-            mentions.
-          </p>
           <button
             className="text-sm text-muted-foreground underline"
             onClick={() => setExisting(true)}

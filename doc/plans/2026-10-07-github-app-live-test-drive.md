@@ -536,3 +536,22 @@ native model runs; no synthetic webhook or host credential substituted for them.
   full-suite and current-head CI limitations remain; this is not a merge-ready
   claim. Failure-only and ambiguous-delivery cases were tested with fixtures,
   without deliberately breaking the live bot's sandbox or permissions.
+
+## Known organization picker — 2026-10-09
+
+GitHub setup lists organizations already observed through the configuring member's
+usable repository connections and connected company bots. Repository discovery
+retains GitHub's owner type, so personal repository owners and unknown legacy
+observations are not misclassified as organizations. This adds no new OAuth
+handoff or access grant. The account picker deduplicates organizations, preserves
+saved ownership, and offers **Another organization** for free-text entry. The
+two introductory App-creation paragraphs were removed.
+
+Verification: 38 focused wizard/repository metadata tests passed. Shared build,
+UI and server typechecks, UI, server and Storybook builds, and token gates passed. In the
+retained test drive, `paperclipai` appeared from the existing connected App;
+selecting it hid the redundant Organization field. **Another organization**
+accepted `test` and enabled Continue. No GitHub registration was submitted.
+The production Storybook journey covers known organizations and manual entry.
+The repository-wide suite was not repeated for this focused follow-up; its
+previous limitations remain recorded above.

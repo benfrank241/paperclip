@@ -11,6 +11,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { agentsApi } from "@/api/agents";
 import { chatEndpointsApi } from "@/api/chatEndpoints";
 import { githubChatApi } from "@/api/githubChat";
+import { projectsApi } from "@/api/projects";
 import { toolsApi } from "@/api/tools";
 import { copyTextToClipboard } from "@/lib/clipboard";
 
@@ -66,12 +67,14 @@ vi.mock("@/api/agents", () => ({
 }));
 vi.mock("@/api/chatEndpoints", () => ({
   chatEndpointsApi: {
+    list: vi.fn(),
     create: vi.fn(),
     get: vi.fn(),
     listResources: vi.fn(),
     setup: vi.fn(),
   },
 }));
+vi.mock("@/api/projects", () => ({ projectsApi: { repositoryOptions: vi.fn() } }));
 vi.mock("@/api/githubChat", () => ({
   githubChatApi: {
     configuration: vi.fn(),
@@ -160,6 +163,10 @@ describe("GitHub App wizard", () => {
       async () => fixture.endpoint,
     );
     vi.mocked(chatEndpointsApi.create).mockResolvedValue(fixture.endpoint);
+    vi.mocked(chatEndpointsApi.list).mockResolvedValue([]);
+    vi.mocked(projectsApi.repositoryOptions).mockResolvedValue({
+      repositories: [], connectionCount: 0, failedConnectionCount: 0,
+    });
     vi.mocked(chatEndpointsApi.listResources).mockResolvedValue([]);
     vi.mocked(githubChatApi.advance).mockResolvedValue({
       endpointId: "draft-1",
@@ -364,7 +371,9 @@ describe("GitHub App wizard", () => {
     await render("resume=draft-1");
     expect(container.querySelector("h1")?.textContent).toBe("Connect GitHub");
     expect(container.textContent).toContain("My account");
-    expect(container.textContent).toContain("An organization");
+    expect(container.textContent).toContain("Another organization");
+    expect(container.textContent).not.toContain("GitHub will ask you");
+    expect(container.textContent).not.toContain("Creates your own GitHub App");
     expect(container.textContent).not.toContain("Assign setup task");
     expect(container.textContent).not.toContain("Copy setup prompt");
     expect(container.textContent).not.toContain("Choose setup method");
@@ -372,6 +381,74 @@ describe("GitHub App wizard", () => {
       container.querySelector("input#github-app-name")?.getAttribute("value"),
     ).toBe("Reviewer");
     expect(chatEndpointsApi.create).not.toHaveBeenCalled();
+  });
+  it("offers known organizations from repositories and connected bots, without personal owners or duplicates", async () => {
+    vi.mocked(projectsApi.repositoryOptions).mockResolvedValue({
+      repositories: [
+        { id: "1", fullName: "acme/api", ownerType: "organization", url: "https://github.com/acme/api", connections: ["GitHub"] },
+        { id: "2", fullName: "ACME/web", ownerType: "organization", url: "https://github.com/ACME/web", connections: ["GitHub"] },
+        { id: "3", fullName: "octocat/site", ownerType: "personal", url: "https://github.com/octocat/site", connections: ["GitHub"] },
+        { id: "4", fullName: "unknown/legacy", url: "https://github.com/unknown/legacy", connections: ["GitHub"] },
+      ], connectionCount: 1, failedConnectionCount: 0,
+    });
+    vi.mocked(chatEndpointsApi.list).mockResolvedValue([
+      { ...fixture.endpoint, id: "connected", status: "active", setup: { github: { ownerType: "organization", ownerLogin: "paperclipai" } } },
+      { ...fixture.endpoint, id: "unconnected", setup: { github: { ownerType: "organization", ownerLogin: "unfinished" } } },
+    ]);
+    await render("resume=draft-1");
+    const select = container.querySelector("#github-owner-type") as HTMLSelectElement;
+    expect([...select.options].map(option => option.textContent)).toEqual([
+      "My account", "ACME", "paperclipai", "Another organization",
+    ]);
+    await act(async () => {
+      select.value = "organization:paperclipai";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.querySelector("#github-owner-login")).toBeNull();
+    await click("Continue to GitHub");
+    expect(githubChatApi.registration).toHaveBeenCalledWith("draft-1", {
+      name: "Reviewer", ownerType: "organization", ownerLogin: "paperclipai",
+    });
+  });
+  it("keeps Another organization editable even when the typed name is already known", async () => {
+    vi.mocked(chatEndpointsApi.list).mockResolvedValue([
+      { ...fixture.endpoint, status: "active", setup: { github: { ownerType: "organization", ownerLogin: "acme" } } },
+    ]);
+    await render("resume=draft-1");
+    const select = container.querySelector("#github-owner-type") as HTMLSelectElement;
+    await act(async () => {
+      select.value = "organization:acme";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      select.value = "organization";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const input = container.querySelector("#github-owner-login") as HTMLInputElement;
+    expect(input.value).toBe("");
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "acme");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(container.querySelector("#github-owner-login")).toBe(input);
+    await click("Save & exit");
+    expect(githubChatApi.saveDraft).toHaveBeenCalledWith("draft-1", {
+      name: "Reviewer", ownerType: "organization", ownerLogin: "acme",
+    });
+  });
+  it("preserves the saved organization when known accounts arrive and allows manual setup after lookup failure", async () => {
+    fixture.endpoint.setup.github = { ownerType: "organization", ownerLogin: "saved-org", appName: "Saved App" };
+    vi.mocked(projectsApi.repositoryOptions).mockRejectedValue(new Error("Unavailable"));
+    vi.mocked(chatEndpointsApi.list).mockResolvedValue([
+      { ...fixture.endpoint, id: "connected", status: "active" },
+    ]);
+    await render("resume=draft-1");
+    expect((container.querySelector("#github-owner-type") as HTMLSelectElement).value).toBe("organization:saved-org");
+    expect(container.textContent).toContain("Could not load some connected GitHub accounts");
+    await click("Save & exit");
+    expect(githubChatApi.saveDraft).toHaveBeenCalledWith("draft-1", {
+      name: "Saved App", ownerType: "organization", ownerLogin: "saved-org",
+    });
   });
   it("requires no-App-created confirmation before restarting an expired handoff", async () => {
     vi.mocked(githubChatApi.advance).mockResolvedValue({ endpointId: "draft-1", state: "recovery", restartableRegistrationId: "expired-1", message: "Handoff expired" });

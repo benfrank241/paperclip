@@ -12,7 +12,7 @@ import {
   members,
 } from "./fixtures";
 
-export type FixtureState = "populated" | "empty" | "loading" | "error" | "long" | "many";
+export type FixtureState = "populated" | "empty" | "loading" | "error" | "long" | "many" | "setup";
 /** Only fixture IDs are intercepted. All shell requests use Storybook's shared API fixtures. */
 export function FixtureApi({
   state = "populated",
@@ -27,8 +27,17 @@ export function FixtureApi({
     });
     client.setQueryData(queryKeys.chatEndpoints.detail(endpoint.id), endpoint);
     client.setQueryData(queryKeys.agents.detail(agent.id), agent);
-    client.setQueryData(["github-setup", endpoint.id], endpoint);
-    client.setQueryData(["github-wizard", endpoint.id], { endpointId: endpoint.id, state: "connected" });
+    client.setQueryData(["github-setup", endpoint.id], state === "setup"
+      ? { ...endpoint, status: "draft", setup: { github: { stage: "setup" } } } : endpoint);
+    client.setQueryData(["github-wizard", endpoint.id], { endpointId: endpoint.id, state: state === "setup" ? "create" : "connected" });
+    client.setQueryData(queryKeys.chatEndpoints.list(endpoint.companyId), [endpoint]);
+    client.setQueryData(["project-repositories", endpoint.companyId], {
+      repositories: [
+        { id: "100", fullName: "acme/web", ownerType: "organization", url: "https://github.com/acme/web", connections: ["GitHub"] },
+        { id: "101", fullName: "paperclipai/api", ownerType: "organization", url: "https://github.com/paperclipai/api", connections: ["GitHub"] },
+        { id: "102", fullName: "mayacoder/site", ownerType: "personal", url: "https://github.com/mayacoder/site", connections: ["GitHub"] },
+      ], connectionCount: 1, failedConnectionCount: 0,
+    });
     client.setQueryData(["github-members", endpoint.companyId], members);
     return client;
   });
@@ -67,7 +76,7 @@ export function FixtureApi({
         );
       }
       const body = init?.body ? JSON.parse(String(init.body)) : {};
-      if (path.endsWith("/github/setup")) return Response.json({ endpointId: endpoint.id, state: "connected" });
+      if (path.endsWith("/github/setup")) return Response.json({ endpointId: endpoint.id, state: state === "setup" ? "create" : "connected" });
       if (path.endsWith("/repositories/access")) {
         repos = repos.map((r) => (!body.enabled || r.availability === "available") ? { ...r, enabled: body.enabled } : r);
         return Response.json({ success: true });
@@ -140,7 +149,7 @@ export function FixtureApi({
       }
       if (path.endsWith("/people/lookup"))
         return Response.json({ githubUserId: "44", login: body.login });
-      return Response.json(endpoint);
+      return Response.json(state === "setup" ? { ...endpoint, status: "draft", setup: { github: { stage: "setup" } } } : endpoint);
     };
     setReady(true);
     return () => {

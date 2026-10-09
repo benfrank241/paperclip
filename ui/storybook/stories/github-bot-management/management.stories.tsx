@@ -51,7 +51,7 @@ const meta = {
   argTypes: {
     state: {
       control: "select",
-      options: ["populated", "empty", "loading", "error", "long", "many"],
+      options: ["populated", "empty", "loading", "error", "long", "many", "setup"],
     },
   },
   render: ({ state }) => (
@@ -82,6 +82,14 @@ const route = (tab: string) => ({
 export const ConnectedJourney: Story = {
   name: "01 Journey / Connected — dismiss to settings",
   parameters: { initialEntries: [`/PAP/apps/chat/connect?provider=github&resume=${endpoint.id}`] },
+};
+export const KnownOrganizationSetup: Story = {
+  name: "01 Journey / Connect — known organizations and manual entry",
+  args: { state: "setup" },
+  parameters: {
+    initialEntries: [`/PAP/apps/chat/connect?provider=github&resume=${endpoint.id}`],
+    docs: { description: { story: "Choose an existing organization, or Another organization to type a different name. Personal repository owners remain under My account. No App is created in this fixture." } },
+  },
 };
 export const ConnectedMobile: Story = {
   ...ConnectedJourney,
