@@ -1764,3 +1764,56 @@ the selected immutable source, resolved lock, signed public image digest, OCI
 labels and pending Linux Hermes provider identity. No model secret is supplied.
 Cloud build results and actual Daytona namespace behavior still require live
 evidence; static workflow checks cannot qualify either.
+
+### 2026-10-09 native routine browser acceptance
+
+A normal public agent configuration save exposed a remaining projection error:
+the managed connection profile `hermes_runner` was treated as a CLI adapter.
+Hermes now retains its own verified-runtime and pending-account qualification
+state. The route suite passes 38 tests. The original public-save failure remains
+recorded; it occurred before any task or model request.
+
+The unchanged routine browser assertions pass all 47 checks on clean source
+`100465ac15524c6b21b5eab7ac66be1e1a31d7f2` on macOS arm64. Five native tasks
+create one self-assigned routine, pause and update it, resume it, and finish
+through the semantic completion path. Two actual wall-clock firings and one
+intentional API firing produce three distinct tasks and completed firing
+records. Create and completed-fire replays retain their original receipts.
+No scheduled work appears across an observed paused clock boundary.
+
+An independent audit of the five retained native event streams verifies seven
+routine mutations, company/run/agent identity, successful semantic terminals,
+managed save receipts and exact authorized artifact bytes. Six screenshots were
+visually inspected. The generated tasks show routine provenance and their
+creating parent. Tool groups remain collapsed in those screenshots; this journey
+does not qualify detailed tool display or live streaming. All 27 main model
+responses and five command reviews are scripted. No paid provider or real
+credential is used, and remote routine behavior remains unqualified.
+
+The owned server exits successfully. After empty open-file checks, only the two
+attempts' private Paperclip homes and Vite caches are removed, reclaiming
+477,714,228 logical file bytes. Proofs, screenshots, logs, native events and
+required Hermes runtime assets remain available. No Docker or Rust build runs
+locally.
+
+### 2026-10-09 current cloud verification limits
+
+The image-only cloud run `37896656417` captures source
+`1030fd6d3b0e74c8792355a1f9a2115004e4a5fd`. Authorization succeeds; the EC2
+image job remains queued at the latest recorded observation. No verified image
+or Daytona result is claimed. Its bounded reservation remains held, and no
+additional paid run is started.
+
+Fresh foundation CI tests merge `4cc3fb60f51ba91efee9828ae4792b2b0f2c50a5`
+against master `b9750b152fccaba51939fbf2b48e237087626f33`. It exposes two
+timeouts. Adapter-route imports now run after each mock reset in the existing
+30-second setup hook, outside the unchanged 15-second request test deadline.
+The real-PostgreSQL backup suite uses the same bounded 30-second deadline as
+its existing integration cases. All 45 route tests and eight local backup tests
+pass, and server/database TypeScript passes. The new master backup case remains
+a cloud verification requirement. Its assertions are unchanged. Previous CI
+failures retain their verdict; the next checks must run the changed source.
+
+Full paid account, subscription, credential lifecycle, attachment, browser
+interaction, published Linux package and actual Daytona qualification remain
+required. Hermes and all four PRs remain pending qualification.
