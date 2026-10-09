@@ -65,7 +65,9 @@ Provider-side app removal remains explicit through the saved Slack management UR
   complete the child app's state-bound OAuth approval; the installer must match the
   grant's Slack identity before personal linking.
 - Returned bot credentials are vaulted before inventory or runtime configuration.
-  Retry connecting reuses those credentials.
+  Retry connecting reuses those credentials after network or inventory failures.
+  Rejected or under-scoped bot credentials instead reinstall the saved app; they
+  never trigger another app creation.
 - Manifest updates finish before managed installation. Changes requiring updated
   permissions therefore pass through installation again before activation.
 - Expired or revoked manager grants require reconnection. Losing managed

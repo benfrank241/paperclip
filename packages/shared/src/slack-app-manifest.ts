@@ -104,6 +104,7 @@ export function slackRegistrationErrorMessage(code: string): string {
     slack_install_identity_mismatch: "Slack returned a different app, workspace, or bot. Install the app created for this connection.",
     slack_install_scopes_missing: "Slack did not grant all required bot permissions. Install the app again and approve its requested permissions.",
     slack_bot_already_connected: "This Slack bot is already connected to Paperclip. Resume its existing connection or use a different app.",
+    slack_install_token_invalid: "Slack rejected the saved bot credentials. Continue in Slack to authorize this app again.",
     slack_configuration_incomplete: "The app is installed, but Paperclip could not finish connecting it. Retry connecting the saved installation.",
     slack_install_account_missing: "Slack did not identify your account. Authorize the same app again to connect your Slack account.",
     slack_install_account_conflict: "This Slack account already has an existing link. Manage account links in connection settings, or authorize with your own Slack account.",

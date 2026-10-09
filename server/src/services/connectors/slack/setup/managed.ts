@@ -22,7 +22,8 @@ export function createManagedSlackSetup(store: SlackRegistrationStore, grants: R
       if (!row?.appId || row.status === "removed" || row.errorCode === "slack_manifest_update_pending") return;
       if (row.managerGrantId !== authorized.grant.id || latest.endpoint.setup.slackSetupMethod !== "managed") throw conflict("Slack setup changed");
       store.assertOrigins(row, latest.endpoint.publicId);
-      if (row.status === "configured" || row.status === "credentials_saved") {
+      const needsReinstall = row.status === "credentials_saved" && ["slack_install_token_invalid", "slack_install_scopes_missing"].includes(row.errorCode ?? "");
+      if (row.status === "configured" || row.status === "credentials_saved" && !needsReinstall) {
         await completion.resumeLocked(endpointId, actor, lease);
         return;
       }

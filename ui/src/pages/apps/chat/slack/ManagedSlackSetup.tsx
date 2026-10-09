@@ -30,7 +30,7 @@ export function ManagedSlackSetup({ endpoint, disabled, saveDetails, onSaved, on
     if (inFlight.current) return;
     inFlight.current = true; setBusy(true); onBusy(true); setError(null);
     try { await action(); }
-    catch (failure) { setError(sanitizedSetupErrorMessage(failure, {})); await chatEndpointsApi.get(endpoint.id).then(onSaved).catch(() => {}); }
+    catch (failure) { setError(sanitizedSetupErrorMessage(failure, {})); await Promise.allSettled([choices.refetch(), chatEndpointsApi.get(endpoint.id).then(onSaved)]); }
     finally { inFlight.current = false; setBusy(false); onBusy(false); }
   }
   async function authorize() {

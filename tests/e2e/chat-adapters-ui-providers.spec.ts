@@ -176,6 +176,31 @@ test.describe.serial("native chat adapter UI", () => {
     await page.getByRole("button", { name: "Done", exact: true }).click();
     await expect(page).toHaveURL(/\/apps\/chat\/endpoint-slack\/settings$/);
   });
+  test("Slack: a failed manager refresh reloads workspace authorization before retry", async ({ page }) => {
+    const slack = PROVIDERS.find(provider => provider.provider === "slack")!;
+    await installChatControlPlaneMock(page, slack, seed, { enableChatConnectors: true, managedSlack: true });
+    let refreshFailed = false;
+    let authorizationRequests = 0;
+    await page.route("**/chat-slack/setup-options", async route => {
+      if (!refreshFailed) return route.fallback();
+      await route.fulfill({ json: { managedAvailable: true, defaultMethod: "managed", workspaces: [] } });
+    });
+    await page.route("**/slack/managed/provision", async route => {
+      refreshFailed = true;
+      await route.fulfill({ status: 422, json: { error: "Reconnect your Slack workspace.", details: { code: "slack_manager_reauthorize" } } });
+    });
+    await page.route("**/slack/managed/authorize", async route => {
+      authorizationRequests++;
+      await route.fulfill({ json: { authorizationUrl: "https://slack.test/manager-consent", expiresAt: new Date(Date.now() + 600_000).toISOString() } });
+    });
+    await page.route("https://slack.test/manager-consent", route => route.fulfill({ contentType: "text/html", body: "Slack authorization fixture" }));
+    await page.goto(`/${seed.prefix}/apps/chat/connect?provider=slack&purpose=chat&resume=endpoint-slack`);
+    await page.getByRole("button", { name: "Add to Slack", exact: true }).click();
+    await expect(page.getByRole("alert")).toBeVisible();
+    await page.getByRole("button", { name: "Add to Slack", exact: true }).click();
+    await expect.poll(() => authorizationRequests).toBe(1);
+    await expect(page).toHaveURL("https://slack.test/manager-consent");
+  });
   test("Slack: own-app selection persists before provisioning", async ({ page }) => {
     const slack = PROVIDERS.find(provider => provider.provider === "slack")!;
     await installChatControlPlaneMock(page, slack, seed, { enableChatConnectors: true, managedSlack: true });

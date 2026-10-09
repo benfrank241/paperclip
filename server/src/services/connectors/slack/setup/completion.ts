@@ -121,8 +121,8 @@ export function createSlackCompletion(store: SlackRegistrationStore) {
       await linkAccount(row, actor, lease);
     } catch (error) {
       const code = object(object(error).details).code;
-      const safeCode = code === "slack_install_account_missing" ? code : code === "chat_identity_link_conflict" || code === "chat_identity_already_linked" ? "slack_install_account_conflict" : code === "slack_install_identity_mismatch" || code === "chat_bot_identity_changed"
-        ? "slack_install_identity_mismatch" : (code === "chat_provider_permissions_missing" || code === "slack_install_scopes_missing") ? "slack_install_scopes_missing"
+      const safeCode = code === "slack_configuration_token_invalid" ? "slack_install_token_invalid" : code === "slack_install_account_missing" ? code : code === "chat_identity_link_conflict" || code === "chat_identity_already_linked" ? "slack_install_account_conflict" : code === "slack_install_identity_mismatch" || code === "chat_bot_identity_changed"
+        ? "slack_install_identity_mismatch" : (code === "chat_provider_permissions_missing" || code === "slack_install_scopes_missing" || code === "slack_setup_permission_denied") ? "slack_install_scopes_missing"
         : code === "chat_bot_identity_in_use" ? "slack_bot_already_connected" : "slack_configuration_incomplete";
       await setFailure(row, "credentials_saved", safeCode, lease);
       await audit(row, actor, "configuration_failed", safeCode);

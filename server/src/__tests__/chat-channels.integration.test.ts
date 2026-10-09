@@ -4209,6 +4209,33 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         expect(saved.providerAccountId).toBeNull();
         expect(saved.setup.slackRegistration).toMatchObject({ status: "credentials_saved", errorCode: "slack_install_scopes_missing" });
       });
+      it("reinstalls the saved app after missing bot scopes without creating another app", async () => {
+        const f = await managedFixture(); const scopes = f.state.grantedScopes;
+        f.state.grantedScopes = []; await f.provision();
+        f.state.grantedScopes = scopes; await f.provision();
+        expect((await f.service.get(f.endpoint.id)).setup.slackRegistration?.status).toBe("configured");
+        expect(f.provider.mock.calls.filter(([url]) => String(url).endsWith("apps.managedInstall"))).toHaveLength(2);
+        expect(f.provider.mock.calls.filter(([url]) => String(url).endsWith("apps.manifest.create"))).toHaveLength(1);
+      });
+      it("clears a manager reconnect error after renewing the bound grant", async () => {
+        const f = await managedFixture(); f.state.managedError = "invalid_auth"; await f.provision();
+        expect((await f.service.get(f.endpoint.id)).setup.slackRegistration?.errorCode).toBe("slack_manager_reauthorize");
+        await f.grants.complete(await f.authorize(), "new-claim", null, actor);
+        expect((await f.service.get(f.endpoint.id)).setup.slackRegistration?.errorCode).toBeNull();
+        f.state.managedError = null; await f.provision();
+        expect((await f.service.get(f.endpoint.id)).setup.slackRegistration?.status).toBe("configured");
+        expect(f.provider.mock.calls.filter(([url]) => String(url).endsWith("apps.manifest.create"))).toHaveLength(1);
+      });
+      it("does not restore a revoked grant when an in-flight refresh returns", async () => {
+        const f = await managedFixture();
+        await db.update(chatSlackManagerGrants).set({ expiresAt: new Date(0) }).where(eq(chatSlackManagerGrants.id, f.grantId));
+        f.broker.refresh.mockImplementation(async () => {
+          await f.grants.revoke(f.grantId, f.companyId, actor);
+          return f.credentials;
+        });
+        await expect(f.grants.token(f.grantId, f.companyId, actor)).rejects.toThrow();
+        expect((await f.grants.get(f.grantId, f.companyId, actor)).status).toBe("revoked");
+      });
       it("claims concurrent manager callbacks once", async () => {
         const f = await managedFixture(); const state = await f.authorize();
         const results = await Promise.allSettled([1, 2].map(() => f.grants.complete(state, "claim", null, actor)));
@@ -4262,6 +4289,34 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         const saved = await f.service.get(f.endpoint.id);
         expect(saved.providerAccountId).toBeNull();
         expect(saved.setup.slackRegistration?.errorCode).toBe("slack_install_identity_mismatch");
+      });
+      it("uses the held transaction for grant queries without acquiring another pool connection", async () => {
+        const f = await managedFixture();
+        const transactionContext = new AsyncLocalStorage<boolean>();
+        const originalTransaction = db.transaction.bind(db);
+        const transactionSpy = vi.spyOn(db, "transaction").mockImplementation((work, ...args) =>
+          originalTransaction(tx => transactionContext.run(true, () => work(tx)), ...args));
+        const querySpies = (["select", "insert", "update", "delete", "execute"] as const).map(method => {
+          const original = db[method].bind(db) as (...args: unknown[]) => unknown;
+          return vi.spyOn(db, method).mockImplementation(((...args: unknown[]) => {
+            if (transactionContext.getStore()) throw new Error("Acquired outer pool connection from held transaction");
+            return original(...args);
+          }) as never);
+        });
+        try {
+          await f.grants.token(f.grantId, f.companyId, actor);
+          await db.update(chatSlackManagerGrants).set({ expiresAt: new Date(0) }).where(eq(chatSlackManagerGrants.id, f.grantId));
+          await f.grants.token(f.grantId, f.companyId, actor);
+          expect(f.broker.refresh).toHaveBeenCalledTimes(1);
+          await f.grants.request(f.grantId, f.companyId, actor, "apps.manifest.validate", { manifest: "{}" });
+          await f.grants.complete(await f.authorize(), "renewed-claim", null, actor);
+          expect((await f.service.get(f.endpoint.id)).setup.slackManagerError).toBeUndefined();
+          await f.grants.revoke(f.grantId, f.companyId, actor);
+          expect(f.broker.revoke).toHaveBeenCalledTimes(2);
+        } finally {
+          transactionSpy.mockRestore();
+          for (const spy of querySpies) spy.mockRestore();
+        }
       });
       it("serializes refreshes across endpoints and never replays an ambiguous refresh", async () => {
         const f = await managedFixture();
