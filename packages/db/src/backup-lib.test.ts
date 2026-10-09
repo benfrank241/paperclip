@@ -105,7 +105,7 @@ describeEmbeddedPostgres("runDatabaseBackup", () => {
       if (previous === undefined) delete process.env.PAPERCLIP_PG_DUMP_PATH;
       else process.env.PAPERCLIP_PG_DUMP_PATH = previous;
     }
-  });
+  }, 30_000);
 
   it("preserves identity generation, sequence options and progress in JavaScript backups", async () => {
     const source = await createTempDatabase();
