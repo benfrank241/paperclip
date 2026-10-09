@@ -1290,6 +1290,16 @@ reporting and forwarding callbacks preserve construction order for the other
 heartbeat modules. Existing public helpers remain re-exported by `heartbeat.ts`.
 Keep lifecycle policy changes separate from this extraction and adapter execution.
 
+Run cancellation and cleanup are in `server/src/services/heartbeat/run-control.ts`.
+It owns Stop, agent and budget cancellation, environment lease release, and
+resumption of saved comments after execution stops. `createHeartbeatRunControl`
+binds the database, lifecycle and admission callbacks, and shared executor
+barriers without starting work. The service retains the process-wide execution
+and cancellation maps so scheduler and route instances observe the same owners.
+Forwarding callbacks preserve construction order for budget, retry, recovery,
+and queue services. Existing public helpers remain re-exported by `heartbeat.ts`.
+Keep cancellation policy changes separate from this extraction and execution.
+
 ## Wake Context Delivery
 
 Built-in adapters deliver wake context through the run prompt, including structured
