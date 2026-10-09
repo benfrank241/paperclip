@@ -3,10 +3,41 @@ import { execFileSync } from "node:child_process";
 import { access, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
 import { HERMES_CLOSURES } from "../src/drivers/acpx/hermes-distributions.ts";
 import { hermesProvisioningConfig } from "./hermes-provisioning-config.mjs";
 
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
+
+/** Download the same pinned GitHub archive without the unauthenticated API quota. */
+export async function downloadPinnedHermesArchive(version, { request = fetch, wait = delay } = {}) {
+  const deadline = Date.now() + 120_000;
+  const url = `https://codeload.github.com/NousResearch/hermes-agent/legacy.tar.gz/${version.commit}`;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error("Hermes source download deadline exceeded; retry setup later");
+    const response = await request(url, { signal: AbortSignal.timeout(Math.min(30_000, remaining)) });
+    if (response.ok) {
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (digest(bytes) !== version.archiveSha256) throw new Error("Hermes source digest mismatch");
+      return bytes;
+    }
+    await response.body?.cancel();
+    const failure = `Hermes source download failed: HTTP ${response.status}`;
+    if (![429, 500, 502, 503, 504].includes(response.status) || attempt === 3) {
+      throw new Error(`${failure}${attempt > 1 ? ` after ${attempt} attempts` : ""}; retry setup later`);
+    }
+    const retryAfter = response.headers.get("retry-after");
+    const seconds = retryAfter === null ? NaN : Number(retryAfter);
+    const retryAt = retryAfter === null ? NaN : Date.parse(retryAfter);
+    const waitMs = Number.isFinite(seconds) ? Math.max(0, seconds * 1_000)
+      : Number.isFinite(retryAt) ? Math.max(0, retryAt - Date.now()) : attempt * 1_000;
+    if (waitMs > 30_000 || waitMs + 1 >= deadline - Date.now()) {
+      throw new Error(`${failure}; retry setup later after the download service's rate limit expires`);
+    }
+    await wait(waitMs);
+  }
+}
 
 /** Source provisioning and the public setup command share one pinned operation. */
 export async function materializePinnedHermesDistribution({ destination, provider, materializer, verify }) {
@@ -30,10 +61,7 @@ export async function materializePinnedHermesDistribution({ destination, provide
     try { uvVersion = execFileSync("uv", ["--version"], { env, encoding: "utf8", timeout: 10000 }); }
     catch (error) { if (error.code === "ENOENT") throw new Error("Hermes setup requires uv 0.12.17 on PATH. Install that version and retry setup."); throw error; }
     if (!/^uv 0\.12\.17(?:\s|$)/.test(uvVersion)) throw new Error("Hermes provisioning requires uv 0.12.17; install that version before provisioning");
-    const response = await fetch(`https://api.github.com/repos/NousResearch/hermes-agent/tarball/${version.commit}`, { signal: AbortSignal.timeout(120_000) });
-    if (!response.ok) throw new Error(`Hermes source download failed: HTTP ${response.status}`);
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (digest(bytes) !== version.archiveSha256) throw new Error("Hermes source digest mismatch");
+    const bytes = await downloadPinnedHermesArchive(version);
     const archive = join(temporary, "source.tar.gz");
     await writeFile(archive, bytes, { mode: 0o600, flag: "wx" });
     execFileSync("tar", ["-xzf", archive, "--strip-components=1", "-C", source], { env, timeout: 30000 });

@@ -1817,3 +1817,36 @@ failures retain their verdict; the next checks must run the changed source.
 Full paid account, subscription, credential lifecycle, attachment, browser
 interaction, published Linux package and actual Daytona qualification remain
 required. Hermes and all four PRs remain pending qualification.
+
+### 2026-10-09 assistant message boundaries and setup throttling
+
+The earlier native controls browser audit records distinct native assistant
+messages projected onto one canonical item. The final snapshot therefore
+suppresses initial streamed text. The reducer now carries the retained native
+message identity to completion, and projection uses assistant identity v2,
+scoped to the message and provider turn. Unlabelled providers retain their
+existing identity, and old PRP v1 events replay unchanged. Earlier commentary
+remains progress; the final snapshot still contains only the latest message.
+Rust regression assertions cover distinct messages, unlabelled continuations,
+opaque IDs and recovery. The production native steering fixture adds the same
+boundary and final-deduplication checks. These Rust/native assertions still
+require fresh cloud execution; no local Rust build is run.
+
+All 168 transcript/adapter/golden UI assertions pass, including preceding text
+retention and replacement behavior. UI TypeScript and token gates pass. This
+is fixture proof, not rendered browser acceptance of the new native binary.
+
+The current Mac CI job fails during source provisioning with GitHub HTTP 429.
+Setup now downloads the immutable codeload archive without GitHub API quota,
+retains the exact existing archive checksum, and retries transient responses
+at most three times with bounded `Retry-After` handling. A real unauthenticated
+download matches the existing SHA-256
+`b71f4b7d4fe5b158ed9bbbeb73f5eb107f2f05e54bd582d32c2d9f718b58d9b0`.
+All ten focused download/setup assertions pass. No runtime installation,
+Docker build, model call or credential transfer occurs in that download check.
+
+Foundation `7a0329466485b40f33f38889964da4baefb58ec7` and core qualification
+`4f40b5b6661b3fefa6e149b70f18ee42b4fc3ecd` have no failed current checks.
+Native `a8805d61af611574046139377801fcb07e35dc25` still needs diagnosis of a
+first-test route import timeout and a denied-retry browser failure; previous
+CI verdicts are retained. Full release qualification remains incomplete.

@@ -72,6 +72,7 @@ pub enum AcpxProviderStateEvent {
     SemanticResult(AcpxSemanticResult),
     AssistantMessage {
         turn_id: String,
+        message_id: Option<String>,
         text: String,
     },
     TurnTerminal {
@@ -388,6 +389,7 @@ impl AcpxProviderState {
                 if status == AcpxTurnStatus::Completed && !self.assistant_text.is_empty() {
                     events.push(AcpxProviderStateEvent::AssistantMessage {
                         turn_id: turn_id.clone(),
+                        message_id: self.assistant_message_id.take(),
                         text: std::mem::take(&mut self.assistant_text),
                     });
                 } else {
@@ -527,7 +529,7 @@ impl AcpxProviderState {
             let starts_new_message = provider_message_id.as_ref().is_some_and(|message_id| {
                 self.assistant_message_id
                     .as_ref()
-                    .is_some_and(|current| current != message_id)
+                    .is_none_or(|current| current != message_id)
             });
             let raw_text = payload
                 .get("text")
@@ -606,6 +608,13 @@ impl AcpxProviderState {
             self.assistant_text.push_str(raw_text);
             if provider_message_id.is_some() {
                 self.assistant_message_id = provider_message_id;
+            } else if let Some(message_id) = self.assistant_message_id.as_ref() {
+                // An unlabelled continuation belongs to the retained message.
+                // Give its progress event the same identity as the final snapshot.
+                payload
+                    .as_object_mut()
+                    .expect("a decoded ACPX runtime delta is an object")
+                    .insert("messageId".to_owned(), Value::String(message_id.clone()));
             }
         }
         if kind == AcpxRuntimeEventKind::SemanticResult {

@@ -559,6 +559,68 @@ describe("nativeRunEventsToTranscript", () => {
     ]);
   });
 
+  it("keeps earlier assistant messages when the final message snapshot arrives", () => {
+    const streamed = [
+      event(1, "item.delta", {
+        itemId: "acpx-assistant-initial",
+        kind: "agentMessage",
+        channel: "progress",
+        text: "Initial work is active.",
+      }),
+      event(2, "item.delta", {
+        itemId: "acpx-assistant-final",
+        kind: "agentMessage",
+        channel: "progress",
+        text: "Work is done.",
+      }),
+    ];
+    expect(nativeRunEventsToTranscript(streamed)).toEqual([
+      expect.objectContaining({
+        kind: "assistant", itemId: "acpx-assistant-initial",
+        text: "Initial work is active.", delta: true, channel: "progress",
+      }),
+      expect.objectContaining({
+        kind: "assistant", itemId: "acpx-assistant-final",
+        text: "Work is done.", delta: true, channel: "progress",
+      }),
+    ]);
+    expect(nativeRunEventsToTranscript([
+      ...streamed,
+      event(3, "item.completed", {
+        itemId: "acpx-assistant-final",
+        kind: "agentMessage",
+        channel: "final",
+        text: "Work is done.",
+      }),
+    ])).toEqual([
+      expect.objectContaining({
+        kind: "assistant", itemId: "acpx-assistant-initial",
+        text: "Initial work is active.", delta: true, channel: "progress",
+      }),
+      expect.objectContaining({
+        kind: "assistant", itemId: "acpx-assistant-final",
+        text: "Work is done.", channel: "final",
+      }),
+    ]);
+  });
+
+  it("uses replacement text only for the message it replaces", () => {
+    expect(nativeRunEventsToTranscript([
+      event(1, "item.delta", {
+        itemId: "initial", kind: "agentMessage", channel: "progress", text: "Initial work.",
+      }),
+      event(2, "item.delta", {
+        itemId: "final", kind: "agentMessage", channel: "progress", text: "Draft answer.",
+      }),
+      event(3, "item.completed", {
+        itemId: "final", kind: "agentMessage", channel: "final", text: "Corrected answer.",
+      }),
+    ])).toEqual([
+      expect.objectContaining({ kind: "assistant", itemId: "initial", text: "Initial work." }),
+      expect.objectContaining({ kind: "assistant", itemId: "final", text: "Corrected answer." }),
+    ]);
+  });
+
   it("streams canonical kind-less deltas using item identity from item.started", () => {
     expect(nativeRunEventsToTranscript([
       itemEvent(1, "item.started", "message-1", {

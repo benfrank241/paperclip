@@ -13,6 +13,10 @@ The source-owned declaration is `src/providers/hermes/version.json`: release
 3.12.14, ACP SDK 0.9.0 and ACPX 0.13.1. Provisioning verifies the source archive
 and upstream `uv.lock`, then installs the locked ACP, MCP, Anthropic, Bedrock and
 Google extras. Use uv 0.12.17. No installation occurs during an agent turn.
+The source download uses GitHub's immutable codeload archive and checks the
+existing archive digest. Transient HTTP failures receive at most three attempts
+within two minutes; throttling respects `Retry-After` up to 30 seconds and longer
+delays produce an actionable setup failure. Downloads require no credentials.
 
 ```sh
 # From the repository root, with an absolute, nonexistent destination:
@@ -101,6 +105,11 @@ extend the task's execution deadline.
 
 - Reasoning and assistant text use distinct message identities. Native tool
   call IDs preserve overlapping calls and edit snapshots.
+- Assistant message identity v2 includes the provider message and provider turn.
+  A final snapshot replaces only its own deltas, retaining preceding commentary
+  and steered messages. Providers without message IDs retain the original
+  identity; existing PRP v1 events replay unchanged. This is an identity change
+  within the current event contract, not a new wire field or transcript rewrite.
 - Native questions publish a 65,536-character limit for text and custom
   answers. The form, canonical response validation and bridge count UTF-16
   code units consistently, so an accepted answer can resume the native callback.
