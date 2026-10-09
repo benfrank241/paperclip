@@ -1392,6 +1392,42 @@ it("reserves a bounded suspension window after close preparation", () => {
   });
 });
 
+it.each([
+  { provider: "acpx" as const, acpxAgent: "pi" as const, closeGraceMs: undefined, drained: true },
+  { provider: "codex" as const, acpxAgent: undefined, closeGraceMs: undefined, drained: false },
+  { provider: "acpx" as const, acpxAgent: "pi" as const, closeGraceMs: 400, drained: false },
+])("keeps Pi stop, remote drain and suspension within a finite close budget ($provider, $closeGraceMs)", async ({ drained, ...options }) => {
+  vi.useFakeTimers();
+  try {
+    const { preparationDeadline, closeDeadline } = runnerdRecoveryInternals.runnerCloseDeadlines(
+      Date.now(), runnerdRecoveryInternals.runnerCloseGraceMs(options),
+    );
+    // The retained restart failure spent 5.2s stopping idle Pi before its
+    // remote drain acknowledgement crossed the next command round trip.
+    await vi.advanceTimersByTimeAsync(5_200);
+    const commands: { commandId: string; status: string; result?: unknown }[] = [];
+    const result = runnerdRecoveryInternals.awaitProviderDrainBarrier({
+      readProviderState: () => null,
+      semanticResultsSettled: () => true,
+      commands: () => commands,
+      queueDrain: commandId => {
+        const command = { commandId, status: "pending", result: undefined as unknown };
+        commands.push(command);
+        setTimeout(() => {
+          command.status = "completed";
+          command.result = { result: { retainedEventsDrained: true } };
+        }, 2_800);
+      },
+      pump: () => undefined,
+      deadline: Date.now() + Math.min(5_000, Math.max(0, preparationDeadline - Date.now())),
+    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await result).toBe(drained);
+    expect(closeDeadline - preparationDeadline).toBeLessThanOrEqual(2_500);
+    expect(runnerdRecoveryInternals.runnerCloseGraceMs(options)).toBeLessThanOrEqual(15_000);
+  } finally { vi.useRealTimers(); }
+});
+
 it("joins an already-completed suspension without queuing a command to an exited runner", async () => {
   const commands = [
     { commandId: "exact-suspend", type: "runner.suspend", status: "completed" },
