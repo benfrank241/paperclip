@@ -8,11 +8,16 @@ from __future__ import annotations
 import asyncio
 from urllib.parse import urlsplit, urlunsplit
 import concurrent.futures
+import hashlib
 import json
 import math
 import os
+import re
+import stat
+import threading
 import uuid
 from collections import deque
+from contextvars import ContextVar
 from pathlib import Path
 
 import acp
@@ -28,6 +33,135 @@ from billing import close_turn, fence_background_dispatch, install_billing_captu
 EXTENSION_VERSION = 1
 ANSWER_MAX_LENGTH = 65536
 USAGE_COUNTERS = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens", "total_tokens", "estimated_cost_usd")
+
+
+class SessionPermissions:
+    """Tool grants for one recorded conversation, never global Hermes approvals."""
+    SCHEMA = "paperclip.hermes.permissions.v1"
+    MAX_TOOLS = 256
+
+    def __init__(self, record=None):
+        self._lock = threading.RLock()
+        self._operations = {}
+        self.scope = None
+        self.tools = set()
+        if record is not None:
+            if (not isinstance(record, dict) or set(record) != {"schema", "scope", "tools"}
+                    or record["schema"] != self.SCHEMA
+                    or not isinstance(record["scope"], str)
+                    or not re.fullmatch(r"[a-f0-9]{64}", record["scope"])
+                    or not isinstance(record["tools"], list) or len(record["tools"]) > self.MAX_TOOLS
+                    or any(not self.valid_name(name) for name in record["tools"])
+                    or len(set(record["tools"])) != len(record["tools"])):
+                raise ValueError("Hermes saved permission state is unreadable")
+            self.scope, self.tools = record["scope"], set(record["tools"])
+
+    @staticmethod
+    def valid_name(name):
+        return isinstance(name, str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,240}", name) is not None
+
+    def bind(self, scope):
+        with self._lock:
+            if self.scope != scope:
+                self.scope, self.tools = scope, set()
+                self._operations = {}
+
+    def allow(self, name, ask, ensure_active):
+        if not self.valid_name(name):
+            raise PermissionError("Invalid native permission operation")
+        with self._lock:
+            if name not in self._operations:
+                if len(self._operations) >= self.MAX_TOOLS:
+                    raise PermissionError("Too many native permission operations")
+                self._operations[name] = threading.Lock()
+            operation = self._operations[name]
+        # Concurrent calls to this tool see the first confirmed session grant.
+        # Other tools can still ask independently. A once/deny never becomes a grant.
+        with operation:
+            ensure_active()
+            with self._lock:
+                granted = name in self.tools
+            if not granted:
+                answer = ask()
+                ensure_active()  # Stop can race delivery of an allowed reply.
+                if answer not in {"once", "session"}:
+                    raise PermissionError("Paperclip denied this operation")
+                if answer == "session":
+                    with self._lock:
+                        if len(self.tools) >= self.MAX_TOOLS:
+                            raise PermissionError("Too many native session permission grants")
+                        self.tools.add(name)
+
+    def record(self):
+        with self._lock:
+            return None if self.scope is None else {
+                "schema": self.SCHEMA, "scope": self.scope, "tools": sorted(self.tools),
+            }
+
+
+def assigned_skill_identity(roots):
+    """Bind sealed assigned contents, not the disposable lease directory name."""
+    if not isinstance(roots, list) or len(roots) > 128:
+        raise ValueError("Hermes assigned skill roots are unreadable")
+    identities, count, total = [], 0, 0
+    def unreadable(error):
+        raise ValueError("Hermes assigned skill inventory is unreadable") from error
+    for root in roots:
+        if not isinstance(root, str) or not Path(root).is_absolute():
+            raise ValueError("Hermes assigned skill root is invalid")
+        root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        entries = []
+        try:
+            for directory, dirs, files, directory_fd in os.fwalk(".", dir_fd=root_fd, follow_symlinks=False, onerror=unreadable):
+                for name in sorted(dirs + files):
+                    count += 1
+                    if count > 100000:
+                        raise ValueError("Hermes assigned skills exceed the managed file limit")
+                    before = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+                    relative = (Path(directory) / name).as_posix()
+                    if stat.S_ISDIR(before.st_mode):
+                        entries.append(["directory", relative])
+                        continue
+                    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > 256 * 1024 * 1024:
+                        raise ValueError("Hermes assigned skills require bounded regular files")
+                    total += before.st_size
+                    if total > 2 * 1024 * 1024 * 1024:
+                        raise ValueError("Hermes assigned skills exceed managed storage limits")
+                    descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
+                    with os.fdopen(descriptor, "rb") as stream:
+                        opened = os.fstat(stream.fileno())
+                        if (opened.st_dev, opened.st_ino, opened.st_ctime_ns) != (before.st_dev, before.st_ino, before.st_ctime_ns):
+                            raise ValueError("Hermes assigned skill changed while binding permissions")
+                        digest, size = hashlib.sha256(), 0
+                        while chunk := stream.read(65536):
+                            size += len(chunk)
+                            if size > before.st_size:
+                                raise ValueError("Hermes assigned skill changed while binding permissions")
+                            digest.update(chunk)
+                        after = os.fstat(stream.fileno())
+                        if size != before.st_size or (after.st_ctime_ns, after.st_mtime_ns) != (before.st_ctime_ns, before.st_mtime_ns):
+                            raise ValueError("Hermes assigned skill changed while binding permissions")
+                    entries.append(["file", relative, size, bool(before.st_mode & 0o111), digest.hexdigest()])
+            identities.append(hashlib.sha256(json.dumps(sorted(entries), separators=(",", ":")).encode()).hexdigest())
+        finally:
+            os.close(root_fd)
+    return identities
+
+
+def permission_scope(state, session_id, policy, assigned_identity):
+    # The runner's recovery binding already pins the connection/account and tool
+    # profile. Bind this private metadata to the native conversation and policy too.
+    route = {}
+    for key in ("provider", "base_url", "api_mode"):
+        value = getattr(state.agent, key, None)
+        if isinstance(value, str):
+            if key == "base_url":
+                parts = urlsplit(value)
+                value = urlunsplit(parts._replace(path=parts.path.rstrip("/")))
+            route[key] = value
+    value = {"sessionId": session_id, "cwd": state.cwd, "model": str(state.model),
+             "route": route, "policy": policy, "assignedSkills": assigned_identity}
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def committed_human_input_wait(name, result):
@@ -174,6 +308,11 @@ class ManagedSessionManager(SessionManager):
                 db.create_session(session_id=head, source="acp", model=state.model, cwd=state.cwd)
             db.replace_messages(head, state.history, active_only=True)
         meta = {"cwd": state.cwd, "paperclip_head": head}
+        permissions = getattr(state, "_paperclip_permissions", None)
+        if permissions is not None:
+            record = permissions.record()
+            if record is not None:
+                meta["paperclip_permissions"] = record
         for key in ("provider", "base_url", "api_mode"):
             value = getattr(agent, key, None)
             if isinstance(value, str) and value.strip():
@@ -211,15 +350,21 @@ class ManagedSessionManager(SessionManager):
         meta = _parse_model_config(row.get("model_config"))
         if not meta.get("cwd"):
             raise ValueError("Hermes session workspace identity is missing")
+        # Existing recordings have no permission metadata and start with no
+        # grants. Unknown or malformed versions must never acquire authority.
+        permissions = SessionPermissions(meta.get("paperclip_permissions"))
         agent = self._make_agent(session_id=head, cwd=meta["cwd"], model=row.get("model"),
                                  api_mode=meta.get("api_mode"), requested_provider=meta.get("provider"),
                                  base_url=meta.get("base_url"))
-        return self._install_state(session_id, agent, meta["cwd"], row.get("model") or agent.model,
-                                   history, persist=False)
+        state = self._install_state(session_id, agent, meta["cwd"], row.get("model") or agent.model,
+                                    history, persist=False)
+        state._paperclip_permissions = permissions
+        return state
 
     def _make_agent(self, **kwargs):
         # Validate the configured route before native construction can try its
         # permissive default-provider fallback.
+        runtime = None
         if self._agent_factory is None:
             from hermes_cli.config import load_config
             from hermes_cli.runtime_provider import resolve_runtime_provider
@@ -228,19 +373,35 @@ class ManagedSessionManager(SessionManager):
             runtime = resolve_runtime_provider(requested=model["provider"], target_model=model["default"])
             if kwargs.get("model") not in (None, model["default"]):
                 raise ValueError("Hermes restored model differs from the selected connection")
+            def normalize(url):
+                parts = urlsplit(url)
+                return urlunsplit(parts._replace(path=parts.path.rstrip("/")))
             for argument, field in (("requested_provider", "provider"), ("base_url", "base_url"), ("api_mode", "api_mode")):
                 actual, expected = kwargs.get(argument), runtime.get(field)
                 if argument == "base_url" and isinstance(actual, str) and isinstance(expected, str):
                     # SDK clients normalize a base URL by appending a slash.
                     # Compare only that normalization; query, host and protocol
                     # remain exact and Paperclip pins the connection fingerprint.
-                    def normalize(url):
-                        parts = urlsplit(url)
-                        return urlunsplit(parts._replace(path=parts.path.rstrip("/")))
                     actual, expected = normalize(actual), normalize(expected)
                 if actual is not None and actual != expected:
                     raise ValueError("Hermes restored route differs from the selected connection")
+            # Native recordings flatten a named custom provider to "custom".
+            # Resolving that bare alias during restore loses its configured
+            # identity and can enter the native default-provider fallback.
+            # Resolve through the selected configuration after validating the
+            # recording; its exact endpoint and protocol still must agree.
+            kwargs["requested_provider"] = model["provider"]
         agent = super()._make_agent(**kwargs)
+        if runtime is not None:
+            if getattr(agent, "model", None) != model["default"]:
+                raise ValueError("Hermes native model differs from the selected connection")
+            for field in ("provider", "base_url", "api_mode"):
+                actual, expected = getattr(agent, field, None), runtime.get(field)
+                if isinstance(expected, str):
+                    if field == "base_url" and isinstance(actual, str):
+                        actual, expected = normalize(actual), normalize(expected)
+                    if actual != expected:
+                        raise ValueError("Hermes native route differs from the selected connection")
         agent.ephemeral_system_prompt = os.environ.get("PAPERCLIP_HERMES_SYSTEM_INSTRUCTIONS", "")
         # Authorized attachments belong to the selected model. Never route an
         # unknown vision model through Hermes's auxiliary image-description API.
@@ -259,6 +420,7 @@ class ManagedHermesACPAgent(HermesACPAgent):
         self._billing = None
         self._billing_negotiated = False
         self._committed_wait_updates = []
+        self._assigned_skill_identity = assigned_skill_identity(json.loads(os.environ.get("PAPERCLIP_HERMES_ASSIGNED_SKILLS", "[]")))
 
     def _build_model_state(self, state):
         from acp.schema import ModelInfo, SessionModelState
@@ -516,6 +678,47 @@ class ManagedHermesACPAgent(HermesACPAgent):
                 self._dispatch_original = middleware.run_tool_execution_middleware
             policy = json.loads(os.environ["PAPERCLIP_HERMES_POLICY"])
             assigned = json.loads(os.environ.get("PAPERCLIP_HERMES_ASSIGNED_SKILLS", "[]"))
+            permissions = getattr(state, "_paperclip_permissions", None)
+            if permissions is None:
+                permissions = state._paperclip_permissions = SessionPermissions()
+            permissions.bind(permission_scope(state, session_id, policy, self._assigned_skill_identity))
+            approved_operation = ContextVar("paperclip.hermes.approved_operation", default=None)
+
+            def ensure_active():
+                if self._active != (session_id, token) or state.cancel_event.is_set():
+                    raise PermissionError("Paperclip turn has stopped")
+
+            def operation_key(name, args):
+                return name, json.dumps(args, sort_keys=True, separators=(",", ":"))
+
+            def check_permission(name, args):
+                read = authorize_tool(name, args, policy=policy, cwd=state.cwd, assigned_skills=assigned)
+                ensure_active()
+                automatic = (name in REPORTING_TOOLS or name in {"clarify", "todo_list"}
+                             or name in policy.get("paperclipAutomaticTools", []))
+                if policy["permissionMode"] != "approve-all" and not automatic and not (read and policy["permissionMode"] == "approve-reads"):
+                    permissions.allow(name, lambda: callbacks.approval_cb(
+                        name, json.dumps(args), allow_permanent=False, allow_session=True,
+                    ), ensure_active)
+                ensure_active()
+
+            def edit_approval(proposal):
+                # Native Hermes validates and prepares its diff before calling
+                # this requester. Its own approval belongs to the same approved
+                # invocation, not a second UI prompt. Nested/direct native edits
+                # still cross managed policy and permission checks separately.
+                try:
+                    if approved_operation.get() == operation_key(proposal.tool_name, proposal.arguments):
+                        authorize_tool(proposal.tool_name, proposal.arguments, policy=policy,
+                                       cwd=state.cwd, assigned_skills=assigned)
+                        ensure_active()
+                    else:
+                        check_permission(proposal.tool_name, proposal.arguments)
+                    return True
+                except PermissionError:
+                    return False
+
+            callbacks.edit_approval_requester = edit_approval
 
             def dispatch(name, args, execute, **kwargs):
                 # Both sequential inline tools and concurrent registry tools
@@ -526,19 +729,13 @@ class ManagedHermesACPAgent(HermesACPAgent):
 
             def authorized(name, args, execute, call_id):
                 try:
-                    read = authorize_tool(name, args, policy=policy, cwd=state.cwd, assigned_skills=assigned)
-                    if self._active != (session_id, token) or state.cancel_event.is_set():
-                        raise PermissionError("Paperclip turn has stopped")
-                    automatic = (name in REPORTING_TOOLS or name in {"clarify", "todo_list"}
-                                 or name in policy.get("paperclipAutomaticTools", []))
-                    if policy["permissionMode"] != "approve-all" and not automatic and not (read and policy["permissionMode"] == "approve-reads"):
-                        allowed = callbacks.approval_cb(name, json.dumps(args), allow_permanent=False, allow_session=True)
-                        if allowed not in {"once", "session"}:
-                            raise PermissionError("Paperclip denied this operation")
+                    check_permission(name, args)
                     scope = tool_policy.set((policy, assigned))
+                    approval = approved_operation.set(operation_key(name, args))
                     try:
                         return execute(args)
                     finally:
+                        approved_operation.reset(approval)
                         tool_policy.reset(scope)
                 except PermissionError as error:
                     result = json.dumps({"error": str(error)})

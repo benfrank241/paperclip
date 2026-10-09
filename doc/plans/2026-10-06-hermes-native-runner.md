@@ -1629,3 +1629,47 @@ The correction passes 259 focused image/account/catalog/report tests, 128
 native source checks and Product E2E typechecking. These credential-free checks
 include plausible wrong image bytes and forbidden-tool evidence; a browser
 campaign and fresh cloud CI remain separate requirements.
+
+### 2026-10-08 native permission and route restoration corrections
+
+The restrictive-mode browser exposed two approval boundaries for one native
+edit. The managed middleware now covers the native edit requester only within
+the same authorized tool invocation. Nested native edits still require their
+own policy and permission check. Planning and protected-path checks run before
+every operation, including operations with a recorded session grant.
+
+Allow-for-session grants use the closed `paperclip.hermes.permissions.v1`
+metadata record. It contains only a scope digest and native tool names. It
+preserves grants across provider stops and strict restoration, including native
+compaction heads. Changed conversation, model, route, workspace or permission
+policy clears the grant. Unknown or unreadable records fail restoration.
+Concurrent calls to one tool share a confirmed session grant. Allow once and
+deny never create a grant, and cancellation racing a reply prevents execution.
+
+Native Hermes records a named custom provider as `custom`. Restoring through
+that bare alias loses its identity. The bridge validates the recorded route,
+resolves through the selected configuration's provider name and rejects a
+native model or route fallback before starting a turn. Assigned-skill identity
+uses bounded, regular-file content hashes and relative names. Replacing an
+unchanged disposable skill lease therefore preserves the grant; content changes
+invalidate it. Assigned skills remain protected from writes.
+
+The correction passes 50 checks on the pinned Python runtime, 27 focused
+TypeScript integrity/recovery/extension checks and seven packaging checks.
+The native ACPX fixture verifies actual once/deny/session file effects,
+unchanged saved metadata around a provider restart, two same-name tool call
+identities, conversation isolation and Stop while approval is unanswered.
+The selected scripted model has no authentication or paid calls. This is native
+transport coverage, not browser or live-provider acceptance. Earlier failed
+fixture attempts retain their verdicts, including a message-separator oracle
+error, a lost session grant and its bounded timeout.
+The complete local ACPX runtime suite passes all three tests in 106.346 seconds,
+including the 50 pinned Python checks and restoration through a newly copied
+assigned-skill lease. The native file tool refuses an assigned-skill write even
+when it has a session grant. The independently checked skill bytes stay intact.
+
+The reviewed Mac and Linux closure pins change only for the bridge source.
+Fresh cloud materialization, current-head native checks and PR verification are
+required. No local Docker or Rust build is used. Shared configuration adoption,
+routine completion and transcript UI patches remain unapplied outside the fixed
+PR file set. Hermes remains pending the full release qualification matrix.
