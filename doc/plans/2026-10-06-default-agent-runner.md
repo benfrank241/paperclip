@@ -38,8 +38,9 @@ Docker materialization, Git installer, or extra login isolation wholesale.
 Authorized 2026-10-09. Canonical branch: `codex/codex-runner-default`.
 Master base: `57e977be7` (includes both prerequisite merges and Pi integration).
 Canonical PR: [draft #15683](https://github.com/paperclipai/paperclip/pull/15683).
-Initial CI candidate: `8ce217b71`; final source freeze follows scoped discovery
-and explicit-native import preservation checks.
+Initial CI candidate: `8ce217b71`. Scoped environment discovery and native import
+preservation are committed at `5ba1bc986`; the final follow-up preserves saved
+model, effort, and timeout through runner-only built-in configuration changes.
 Preview: [isolated Codex QA](http://127.0.0.1:3124), normal dev supervisor,
 separate empty database. Current-head live evidence is pending the source freeze
 and verified binary provenance; older services and artifacts are not proof.
@@ -116,8 +117,8 @@ Local startup hit the macOS shared-memory ID limit. One detached 56-byte segment
 was released only after zero attachments and exited owners were verified. No
 running server or database file was changed. The separate QA server is healthy.
 
-Next action: finish core integration checks, commit and push the candidate,
-then run existing Linux CI/install checks and bounded actual journeys. Preserve
+Next action: verify the final candidate through existing Linux CI/install checks,
+fresh review, and bounded actual journeys. Preserve
 failed attempts and costs. Unrelated findings and remaining harness qualification
 belong to later slices.
 
@@ -135,3 +136,6 @@ pass 280 cases plus three final regressions. Missing discovery metadata shows
 loading or the server error with Retry; explicit Legacy remains available.
 Final portability checks pass 105 cases; approval, built-in asset and CLI unit
 controls pass eight, three and three. The 72 skipped DB cases still need Linux.
+Final candidate Storybook builds at `5ba1bc986`; fresh desktop/mobile captures
+are in progress against the frozen UI tree. The runner-only built-in regression
+now checks nondefault settings through switches in both directions.

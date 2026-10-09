@@ -1742,7 +1742,10 @@ export function builtInAgentService(db: Db) {
     );
     const resolvedInput = existingPendingApproval || preserveExistingAdapter
       ? input
-      : await defaultProvisionInput(companyId, definition, input);
+      : existing && input.runner !== undefined && input.adapterType === undefined && input.adapterConfig === undefined
+        // A runner-only request translates saved settings, not provisioning defaults.
+        ? { ...input, adapterType: existing.adapterType, adapterConfig: existing.adapterConfig }
+        : await defaultProvisionInput(companyId, definition, input);
     if (!existingPendingApproval && !preserveExistingAdapter) {
       await assertKnownBuiltInAgentModel(definition, resolvedInput);
     }

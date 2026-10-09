@@ -287,7 +287,8 @@ describeEmbeddedPostgres("built-in agents", () => {
   it("keeps existing legacy and native built-in runners through unrelated edits and startup", async () => {
     const companyId = await seedCompany({ requireApproval: false });
     const svc = builtInAgentService(db);
-    const created = await svc.ensure(companyId, "briefs", { adapterType: "codex_local", adapterConfig: { model: "gpt-5.4" }, runner: "legacy" });
+    const savedSettings = { model: "gpt-5.5", modelReasoningEffort: "high", timeoutSec: 123 };
+    const created = await svc.ensure(companyId, "briefs", { adapterType: "codex_local", adapterConfig: savedSettings, runner: "legacy" });
     expect(created.agent?.adapterType).toBe("codex_local");
     await svc.ensure(companyId, "briefs", { budgetMonthlyCents: 100 });
     await reconcileBuiltInAgentsOnStartup(db);
@@ -295,10 +296,14 @@ describeEmbeddedPostgres("built-in agents", () => {
     expect(legacy.agent?.adapterType).toBe("codex_local");
     expect(legacy.agent?.adapterConfig).toEqual(created.agent?.adapterConfig);
     const switched = await svc.ensure(companyId, "briefs", { runner: "paperclip" });
-    expect(switched.agent).toMatchObject({ adapterType: "paperclip_runner", adapterConfig: { provider: "codex" } });
+    expect(switched.agent).toMatchObject({ adapterType: "paperclip_runner", adapterConfig: { provider: "codex", ...savedSettings } });
     await svc.ensure(companyId, "briefs", { budgetMonthlyCents: 200 });
     await reconcileBuiltInAgentsOnStartup(db);
     expect((await svc.get(companyId, "briefs")).agent?.adapterConfig).toEqual(switched.agent?.adapterConfig);
+    const switchedBack = await svc.ensure(companyId, "briefs", { runner: "legacy" });
+    expect(switchedBack.agent).toMatchObject({ adapterType: "codex_local", adapterConfig: savedSettings });
+    const switchedAgain = await svc.ensure(companyId, "briefs", { runner: "paperclip" });
+    expect(switchedAgain.agent).toMatchObject({ adapterType: "paperclip_runner", adapterConfig: { provider: "codex", ...savedSettings } });
     // A saved native profile remains editable on source-built macOS installs.
     runnerTarget.platform = "darwin";
     runnerTarget.architecture = "arm64";
