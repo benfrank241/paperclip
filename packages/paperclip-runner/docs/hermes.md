@@ -46,6 +46,20 @@ staged there. Actual Daytona namespace behavior remains a qualification
 requirement. Building a provider pack verifies its bytes without probing the
 builder's sandbox; the execution host performs that probe at admission.
 
+Maintainers can build the qualification image on the existing EC2 fleet with
+the **Docker Runner check** workflow. Select `publish_eval_image=true` and
+`candidate_provider=hermes`, and select the source branch with `target_branch`.
+The workflow resolves that branch to an immutable commit before checkout. The
+image-only job has a 45-minute deadline, includes the pinned Linux runtime,
+signs its digest and verifies public retrieval, image labels and provider-pack
+identity. It uses no model credentials or inference. Its retained artifact
+contains the immutable image reference and verification records.
+
+This image build does not prove that an execution host permits Hermes's sandbox
+namespaces. Actual Daytona tool execution and restore remain separate release
+gates. The full-stack campaign workflow retains its own content-addressed image
+and signature contract.
+
 ## Connections and identity
 
 Use the existing account/model picker and the `hermes_runner` managed projection.

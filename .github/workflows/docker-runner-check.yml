@@ -11,6 +11,13 @@ on:
         description: "Publish an immutable Daytona qualification image on the EC2 fleet (no provider credentials)"
         type: boolean
         default: false
+      candidate_provider:
+        description: "Include a pending native harness in the qualification image"
+        type: choice
+        options:
+          - none
+          - hermes
+        default: none
       verify_source:
         description: "Run broad source checks on EC2"
         type: boolean
@@ -101,10 +108,11 @@ jobs:
     name: Build and verify on EC2
     needs: authorize_manual
     runs-on: runs-on/fleet=paperclip-public-pr-x64/env=public-ci
-    timeout-minutes: 90
+    timeout-minutes: ${{ inputs.publish_eval_image && !inputs.verify_source && !inputs.verify_public_install && !inputs.build_eval_viewer && 45 || 90 }}
     permissions:
       contents: read
       packages: write
+      id-token: write
     steps:
       - name: Authorize an explicit maintainer image build
         env:
@@ -147,26 +155,72 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build checksum-verified Grok provider image
+      - if: inputs.publish_eval_image
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+      - name: Build checksum-verified qualification image
         if: inputs.publish_eval_image
         env:
           SOURCE_SHA: ${{ needs.authorize_manual.outputs.target_sha }}
+          CANDIDATE_PROVIDER: ${{ inputs.candidate_provider || 'none' }}
         run: |
           set -euo pipefail
+          case "$CANDIDATE_PROVIDER" in
+            none) candidate_providers='' ;;
+            hermes) candidate_providers=hermes ;;
+            *) echo 'Unsupported qualification provider' >&2; exit 1 ;;
+          esac
           image="ghcr.io/paperclipai/paperclip-daytona-runner:qualification-${SOURCE_SHA}-${GITHUB_RUN_ID}"
           lock_sha="$(sha256sum pnpm-lock.yaml | cut -d ' ' -f 1)"
-          docker buildx build --platform linux/amd64 \
+          content_id="$(printf '%s\n' "$SOURCE_SHA" "$lock_sha" "$candidate_providers" | sha256sum | cut -d ' ' -f 1)"
+          timeout --signal=TERM --kill-after=15s 40m docker buildx build --platform linux/amd64 \
             --file docker/daytona-runner/Dockerfile \
             --build-arg "PAPERCLIP_RUNNER_SOURCE_REVISION=$SOURCE_SHA" \
-            --build-arg "PAPERCLIP_RUNNER_CONTENT_ID=qualification-$SOURCE_SHA" \
+            --build-arg "PAPERCLIP_RUNNER_CONTENT_ID=$content_id" \
             --build-arg "PAPERCLIP_RUNNER_LOCK_SHA256=$lock_sha" \
+            --build-arg "PAPERCLIP_RUNNER_CANDIDATE_PROVIDERS=$candidate_providers" \
             --cache-from type=registry,ref=ghcr.io/paperclipai/paperclip-daytona-runner:e2e-buildcache-amd64 \
             --tag "$image" --metadata-file remote-verification/image.json --push .
           digest="$(jq -r '."containerimage.digest"' remote-verification/image.json)"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           immutable="${image%:*}@$digest"
+          cosign sign --yes "$immutable"
+          cosign verify \
+            --certificate-identity "https://github.com/$GITHUB_WORKFLOW_REF" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$immutable" > remote-verification/image-signature.json
           docker logout ghcr.io
           docker buildx imagetools inspect "$immutable" >/dev/null
+          docker buildx imagetools inspect "$immutable" --format '{{json .Image}}' \
+            | jq --arg source "$SOURCE_SHA" --arg content "$content_id" -e '
+              {architecture, os, user: .config.User,
+               contentId: .config.Labels["io.paperclip.runner.content-id"],
+               sourceRevision: .config.Labels["org.opencontainers.image.revision"]}
+              | select(.architecture == "amd64" and .os == "linux" and .user == "daytona"
+                       and .contentId == $content and .sourceRevision == $source)
+            ' > remote-verification/image-identity.json
+          # Read only public package metadata as the image's unprivileged user.
+          # Host namespaces and actual Daytona execution need separate proof.
+          docker run --rm --network none \
+            --entrypoint /opt/paperclip-runner/provider-pack/node_modules/node/bin/node \
+            "$immutable" -e '
+              const fs = require("node:fs");
+              const assert = require("node:assert/strict");
+              const pack = JSON.parse(fs.readFileSync("/opt/paperclip-runner/provider-pack/provider-pack.json", "utf8"));
+              const candidate = process.argv[1];
+              assert.equal(pack.schema, "paperclip-runner/remote-provider-pack/v1");
+              assert.equal(pack.payload.runnerSourceRevision, process.argv[2]);
+              assert.deepEqual(pack.payload.target, {platform: "linux", architecture: "x64"});
+              assert.match(pack.digest, /^sha256:[a-f0-9]{64}$/);
+              if (candidate === "hermes") {
+                const hermes = pack.payload?.candidateProviders?.hermes;
+                assert.equal(hermes?.version, "v2026.9.24");
+                assert.equal(hermes?.qualification, "pending");
+                assert.match(hermes.closureDigest, /^sha256:[a-f0-9]{64}$/);
+                assert.equal(hermes.path, "provider-assets/hermes/linux-x64");
+              }
+              console.log(JSON.stringify({providerPackDigest: pack.digest, candidateProvider: candidate,
+                candidate: candidate === "hermes" ? pack.payload.candidateProviders.hermes : null}));
+            ' "$CANDIDATE_PROVIDER" "$SOURCE_SHA" > remote-verification/provider-pack-identity.json
           echo "$immutable" > remote-verification/image.txt
           echo "Image: $immutable" >> "$GITHUB_STEP_SUMMARY"
       - name: Verify repository on EC2

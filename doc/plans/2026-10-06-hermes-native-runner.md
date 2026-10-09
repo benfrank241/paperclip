@@ -1757,3 +1757,10 @@ IDs remain separate. Native output preserves newlines and failure details.
 Unrecognized structured results remain inspectable. All 166 transcript and
 boundary checks pass locally, and UI token gates pass. These are presentation
 contract checks; rendered browser acceptance remains required.
+
+The existing maintainer-only EC2 image workflow now has a closed `none`/`hermes`
+candidate selector. The image-only build has a 45-minute deadline. It verifies
+the selected immutable source, resolved lock, signed public image digest, OCI
+labels and pending Linux Hermes provider identity. No model secret is supplied.
+Cloud build results and actual Daytona namespace behavior still require live
+evidence; static workflow checks cannot qualify either.
