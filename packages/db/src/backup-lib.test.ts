@@ -74,7 +74,9 @@ describe("createBufferedTextFileWriter", () => {
   });
 });
 
-describeEmbeddedPostgres("runDatabaseBackup", () => {
+// Each case starts a real PostgreSQL instance. Use the same bounded deadline
+// as the existing backup integration cases, including newly added cases.
+describeEmbeddedPostgres("runDatabaseBackup", { timeout: 30_000 }, () => {
   it("preserves identity generation, sequence options and progress in JavaScript backups", async () => {
     const source = await createTempDatabase();
     const target = await createSiblingDatabase(source, "identity_restore_target");
