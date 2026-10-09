@@ -30,10 +30,34 @@ describe("Hermes native extensions", () => {
     const response = (value: string) => ({ action: "submit" as const, response: { schema: "paperclip.question_response.v1" as const,
       answers: { q0: answerMode === "text" ? { text: value } : { customText: value } },
     } });
-    expect(result.input.resolve(response("😀".repeat(32_768)))).toMatchObject({ outcome: "answered" });
-    for (const value of ["x".repeat(65_537), "x".repeat(70_000), "😀".repeat(32_769)]) {
-      expect(() => result.input.resolve(response(value))).toThrow("at most 65536 characters");
+    const limit = result.input.questionSet.questions[0]!.textValidation!.maxLength!;
+    expect(limit).toBeLessThan(65_536);
+    expect(result.input.resolve(response("😀".repeat(Math.floor(limit / 2))))).toMatchObject({ outcome: "answered" });
+    for (const value of ["x".repeat(limit + 1), "x".repeat(70_000), "😀".repeat(Math.floor(limit / 2) + 1)]) {
+      expect(() => result.input.resolve(response(value))).toThrow(`at most ${limit} characters`);
     }
+  });
+  it.each(["text", "single_select", "multi_select"])("keeps all accepted %s answers inside ACPX's encoded response bound", async answerMode => {
+    const result = await adapter().request("_hermes/ask_questions", { version: 1, sessionId: "session", input: {
+      schema: "paperclip.question_set.v1", questions: Array.from({ length: 5 }, (_, i) => ({
+        id: `q${i}` + "\u0000".repeat(158), prompt: "Why?", required: true, answerMode,
+        textValidation: { maxLength: 65_536 },
+        ...(answerMode === "text" ? {} : { options: Array.from({ length: 4 }, (_, j) => ({
+          id: `o${j}` + "\u0000".repeat(158), label: `Choice ${j}`,
+        })), customAnswer: { enabled: true } }),
+      })),
+    } });
+    if (!("input" in result)) throw new Error("Missing canonical question form");
+    const answers = Object.fromEntries(result.input.questionSet.questions.map(question => [question.id, {
+      selectedOptionIds: answerMode === "multi_select" ? question.options!.map(option => option.id) : [],
+      [answerMode === "text" ? "text" : "customText"]: "\u0000".repeat(question.textValidation!.maxLength!),
+    }]));
+    const response = result.input.resolve({ action: "submit", response: { schema: "paperclip.question_response.v1", answers } });
+    expect(Buffer.byteLength(JSON.stringify(response))).toBeLessThanOrEqual(256 * 1024);
+    const oversized = Object.fromEntries(result.input.questionSet.questions.map(question => [question.id, {
+      [answerMode === "text" ? "text" : "customText"]: "x".repeat(60_000),
+    }]));
+    expect(() => result.input.resolve({ action: "submit", response: { schema: "paperclip.question_response.v1", answers: oversized } })).toThrow("at most");
   });
   it("preserves estimated-cost provenance without inventing billed cost", async () => {
     const events = await adapter().notification("_hermes/usage", { version: 1, sessionId: "session", tokens: "reported", cost: "estimated", estimatedUsd: 0.012 });

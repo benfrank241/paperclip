@@ -33,6 +33,28 @@ export interface AcpxProfileExtensionContext {
   turnId: string;
 }
 
+/** ACPX 0.13.1 bounds the complete encoded extension response at 256 KiB.
+ * Reserve its fixed fields and every selectable ID, then budget text for the
+ * worst JSON escape (six bytes per JavaScript string code unit). The persisted
+ * form and response validator must share this limit before a human submits.
+ */
+function boundedHermesQuestionSet(value: unknown): PaperclipQuestionSet {
+  const input = parsePaperclipQuestionSet(value);
+  const largestEmptyAnswers = Object.fromEntries(input.questions.map(question => [question.id, {
+    selectedOptionIds: (question.options ?? []).map(option => option.id),
+    ...(question.answerMode === "text" ? { text: "" }
+      : question.customAnswer?.enabled ? { customText: "" } : {}),
+  }]));
+  const overhead = Buffer.byteLength(JSON.stringify({ outcome: "answered", answers: largestEmptyAnswers }));
+  const maxLength = Math.min(65_536, Math.floor((256 * 1024 - overhead) / (6 * input.questions.length)));
+  if (maxLength < 1) throw new Error("Hermes question answers exceed the encoded response limit");
+  return parsePaperclipQuestionSet({ ...input, questions: input.questions.map(question => ({
+    ...question, textValidation: { ...question.textValidation,
+      maxLength: Math.min(question.textValidation?.maxLength ?? maxLength, maxLength),
+    },
+  })) });
+}
+
 /** Provider branches install their closed, pinned adapters here after qualification research. */
 export function createAcpxProfileExtensionAdapter(
   agent: QualifiedAcpxAgent,
@@ -42,7 +64,7 @@ export function createAcpxProfileExtensionAdapter(
   if (agent === "hermes") return {
     async request(method, params) {
       if (method !== "_hermes/ask_questions" || params.version !== 1 || params.sessionId !== context.sessionId) throw new Error("Unsupported Hermes question extension");
-      const questionSet = parsePaperclipQuestionSet(params.input);
+      const questionSet = boundedHermesQuestionSet(params.input);
       return { input: {
         method, questionSet,
         resolve(resolution) {
