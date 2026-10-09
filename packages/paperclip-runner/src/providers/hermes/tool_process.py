@@ -33,7 +33,10 @@ def sandbox_command(command, *, cwd, policy, assigned):
         bwrap = shutil.which("bwrap")
         if not bwrap:
             raise PermissionError("Hermes command execution requires bubblewrap in the runner image")
-        args = [bwrap, "--die-with-parent", "--unshare-pid", "--bind", "/", "/", "--proc", "/proc"]
+        # Ordinary bind mounts disable device access. Provide bubblewrap's
+        # minimal /dev so native shell redirects and mktemp work; apply the
+        # protected and assigned overlays afterwards so they remain binding.
+        args = [bwrap, "--die-with-parent", "--unshare-pid", "--bind", "/", "/", "--proc", "/proc", "--dev", "/dev"]
         for path in protected:
             args += ["--tmpfs", path]
         for path in readonly:

@@ -620,6 +620,49 @@ class Controls(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second.message_id, text.message_id)
 
 
+class ToolProcess(unittest.TestCase):
+    def test_linux_devices_keep_protected_and_assigned_overlays(self):
+        import tool_process
+        with patch.object(tool_process.sys, "platform", "linux"), patch.object(tool_process.shutil, "which", return_value="/usr/bin/bwrap"):
+            command = tool_process.sandbox_command(["/bin/sh", "-c", "true"], cwd="/workspace",
+                policy={"protectedPaths": ["/runtime"]}, assigned=["/assigned"])
+        self.assertEqual(command[:11], ["/usr/bin/bwrap", "--die-with-parent", "--unshare-pid", "--bind", "/", "/", "--proc", "/proc", "--dev", "/dev", "--tmpfs"])
+        self.assertEqual(command[11:], ["/runtime", "--ro-bind", "/assigned", "/assigned", "--chdir", "/workspace", "--", "/bin/sh", "-c", "true"])
+
+    def test_linux_device_redirection_supports_concurrent_atomic_writes(self):
+        import subprocess
+        import sys
+        import tempfile
+        from concurrent.futures import ThreadPoolExecutor
+        from pathlib import Path
+        from tool_process import sandbox_command
+        if sys.platform != "linux":
+            self.skipTest("Requires the real Linux bubblewrap device mount")
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            workspace, protected, assigned = [root / name for name in ("workspace", "protected", "assigned")]
+            for directory in (workspace, protected, assigned):
+                directory.mkdir()
+            (protected / "secret").write_text("MUST_NOT_READ")
+            (assigned / "SKILL.md").write_text("Assigned instructions")
+            script = ('set -eu; test -c /dev/null; : < /dev/null; : > /dev/null; '
+                'test ! -e "$3/secret"; test -r "$4/SKILL.md"; '
+                'if printf forbidden > "$4/changed" 2>/dev/null; then exit 23; fi; '
+                'tmp="$(mktemp "$1/.device-write.XXXXXX" 2>/dev/null)"; '
+                'printf "%s" "$2" > "$tmp"; mv "$tmp" "$1/$2"')
+            def write(index):
+                name = f"write-{index}"
+                command = sandbox_command(["/bin/sh", "-c", script, "fixture", str(workspace), name, str(protected), str(assigned)],
+                    cwd=str(workspace), policy={"protectedPaths": [str(protected)]}, assigned=[str(assigned)])
+                subprocess.run(command, check=True, capture_output=True, timeout=10)
+                self.assertEqual((workspace / name).read_text(), name)
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                list(pool.map(write, range(16)))
+            self.assertEqual(len(list(workspace.iterdir())), 16)
+            self.assertFalse((assigned / "changed").exists())
+            self.assertEqual((protected / "secret").read_text(), "MUST_NOT_READ")
+
+
 class NoAuth(unittest.TestCase):
     def test_no_auth_omits_sdk_headers_and_metadata_probe_credentials(self):
         import openai

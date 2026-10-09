@@ -41,7 +41,7 @@ export async function verifyHermesCommandSandbox(
     if (platform === "darwin") {
       await execute("/usr/bin/sandbox-exec", ["-p", "(version 1) (allow default) (deny process-info*) (allow process-info* (target self))", "/usr/bin/true"]);
     } else if (platform === "linux") {
-      await execute("/usr/bin/bwrap", ["--die-with-parent", "--unshare-pid", "--bind", "/", "/", "--proc", "/proc", "--", "/bin/true"]);
+      await execute("/usr/bin/bwrap", ["--die-with-parent", "--unshare-pid", "--bind", "/", "/", "--proc", "/proc", "--dev", "/dev", "--", "/bin/sh", "-c", "test -c /dev/null && : < /dev/null && : > /dev/null"]);
     } else {
       throw new Error("Unsupported platform");
     }
