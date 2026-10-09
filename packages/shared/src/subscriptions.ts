@@ -82,6 +82,7 @@ export interface SubscriptionAccountReport {
   name: string;
   ownerUserId: string | null;
   ownerName: string | null;
+  shared: boolean;
   identityVerified: boolean;
   detectedPlan: string | null;
   observedAt: string | null;

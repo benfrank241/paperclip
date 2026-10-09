@@ -733,11 +733,15 @@ the selected date range.
 Discovery uses the managed AI connection actually selected for a run, or the
 connected accounts visible to the user viewing Costs. An administrator cannot
 probe another user's private credentials. OpenAI identity combines workspace and
-seat claims from the selected vaulted credential. Claude's OAuth profile combines
+seat claims from the exact bearer token accepted by its usage endpoint, with
+the selected workspace checked against those claims. An editable ID token cannot
+establish identity or grant price-edit access. Claude's OAuth profile combines
 organization and account identity when the token allows profile access. Identity
 keys are company-scoped hashes; reporting never exposes tokens, raw provider IDs,
 or credential hashes. Multiple agents and connections sharing a known paid seat
-count once. Distinct seats remain separate even in the same workspace.
+count once. Distinct seats remain separate even in the same workspace. Before
+provider verification, each connection grant has its own unconfirmed record;
+local claims alone cannot combine another user's account or billing editors.
 
 Supported exact plan identifiers with a stable account identity map to dated, USD, before-tax web list prices
 in `packages/shared/src/subscriptions.ts`. The UI labels these **Estimated** (or

@@ -14,10 +14,10 @@ function fixture(): SubscriptionCostReport {
     subscription: { ...zero, inputTokens: 10000000, cachedInputTokens: 74000000, outputTokens: 1100000, eventCount: 50 },
     unknown: { ...zero }, unattributedSubscription: { ...zero },
     accounts: [
-      { id: "plus", provider: "openai", name: "Goldie’s ChatGPT", ownerUserId: "goldie", ownerName: "Goldie", identityVerified: true,
+      { id: "plus", provider: "openai", name: "Goldie’s ChatGPT", ownerUserId: "goldie", ownerName: "Goldie", shared: false, identityVerified: true,
         detectedPlan: "plus", observedAt: new Date().toISOString(), lastCheckedAt: new Date().toISOString(), refreshStatus: "ok", canEdit: true,
         price, usage: { ...zero, inputTokens: 8000000, cachedInputTokens: 60000000, outputTokens: 1000000, eventCount: 40 }, agents: [{ id: "codie", name: "Codie" }, { id: "fry", name: "Fry" }] },
-      { id: "max", provider: "anthropic", name: "Shared Claude", ownerUserId: null, ownerName: null, identityVerified: true,
+      { id: "max", provider: "anthropic", name: "Shared Claude", ownerUserId: null, ownerName: null, shared: true, identityVerified: true,
         detectedPlan: "max_5x", observedAt: new Date().toISOString(), lastCheckedAt: new Date().toISOString(), refreshStatus: "ok", canEdit: true,
         price: { ...price, plan: "Claude Max 5x", amountCents: "10000", monthlyCents: "10000", sourceUrl: "https://claude.com/pricing" },
         usage: { ...zero, inputTokens: 2000000, cachedInputTokens: 14000000, outputTokens: 100000, eventCount: 10 }, agents: [{ id: "leela", name: "Leela" }] },

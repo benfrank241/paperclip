@@ -21,30 +21,22 @@ export interface SubscriptionIdentity {
   plan: string | null;
 }
 
-/** These are identity hints from a selected, vaulted credential, never auth checks.
- * Account/workspace alone is insufficient: distinct paid seats must stay distinct.
+/** Credential-local hints cannot authenticate a provider account. In particular,
+ * a user may edit an ID token independently of the bearer token sent upstream.
  * No ambient host credentials, emails, raw account IDs, or tokens leave this helper. */
 export function subscriptionCredentialIdentity(companyId: string, provider: string, credential: string): SubscriptionIdentity {
   const credentialKey = subscriptionIdentityKey(companyId, provider, ["credential", credential]);
   const auth = json(credential);
-  let accountKey = credentialKey;
   let plan: string | null = null;
-  let verified = false;
   if (provider === "openai") {
     const tokens = object(auth.tokens);
     const token = claims(tokens.id_token);
     const account = object(token["https://api.openai.com/auth"]);
-    const workspace = string(tokens.account_id ?? auth.accountId);
-    const seat = string(account.chatgpt_user_id) ?? string(token.sub);
-    if (workspace && seat) {
-      accountKey = subscriptionIdentityKey(companyId, provider, ["account", workspace, seat]);
-      verified = true;
-    }
     plan = string(account.chatgpt_plan_type);
   }
   // Other credential formats do not yet prove a stable billing identity. Use a
   // credential-scoped record until a profile observation or manual link proves it.
-  return { credentialKey, accountKey, verified, plan };
+  return { credentialKey, accountKey: credentialKey, verified: false, plan };
 }
 
 export async function probeSubscriptionIdentity(companyId: string, provider: AiProvider, credential: string, request: typeof fetch = fetch) {
@@ -67,5 +59,20 @@ export async function probeSubscriptionIdentity(companyId: string, provider: AiP
   }
   const usage = await probeAiConnectionUsage({ provider, method: "subscription" }, credential, { request });
   if (usage.status !== "ok") throw new Error("Subscription profile unavailable");
+  if (provider === "openai") {
+    // The usage request authenticated this exact bearer token with OpenAI.
+    // Only its claims may identify a seat; the separate ID token and editable
+    // account-id field cannot grant billing access. An opaque bearer or a
+    // selected workspace that differs from its claims stays unconfirmed.
+    const auth = json(credential), tokens = object(auth.tokens);
+    const token = claims(tokens.access_token ?? auth.accessToken);
+    const account = object(token["https://api.openai.com/auth"]);
+    const workspace = string(account.chatgpt_account_id);
+    const selectedWorkspace = string(tokens.account_id ?? auth.accountId);
+    const seat = string(account.chatgpt_user_id) ?? string(token.sub);
+    if (workspace && seat && (!selectedWorkspace || selectedWorkspace === workspace)) {
+      return { ...identity, accountKey: subscriptionIdentityKey(companyId, provider, ["account", workspace, seat]), verified: true, plan: string(usage.planType) };
+    }
+  }
   return { ...identity, plan: string(usage.planType) };
 }

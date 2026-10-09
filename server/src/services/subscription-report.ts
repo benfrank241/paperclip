@@ -59,7 +59,7 @@ export async function subscriptionCostReport(db: Db, companyId: string, actor: S
       const ownerUserId = !account.shared && account.ownerUserIds.length === 1 ? account.ownerUserIds[0] : null;
       report.accounts.push({ id: account.id, provider: account.provider,
         name: account.ownerUserIds.length > 0 && (account.shared || !account.ownerUserIds.includes(actor.userId)) ? `${account.provider} subscription` : account.name,
-        ownerUserId, ownerName: ownerNames.get(ownerUserId ?? "") ?? null,
+        ownerUserId, ownerName: ownerNames.get(ownerUserId ?? "") ?? null, shared: account.shared,
         identityVerified: account.identityVerified, detectedPlan: account.detectedPlan,
         observedAt: account.observedAt?.toISOString() ?? null, lastCheckedAt: account.lastCheckedAt?.toISOString() ?? null,
         refreshStatus: account.refreshStatus, canEdit: canEditSubscription(account, actor), price,

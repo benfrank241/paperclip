@@ -4,7 +4,7 @@ import { aiConnectionMetadataSchema, normalizeCents, subscriptionPlan, type AiPr
 import { conflict, forbidden, notFound } from "../errors.js";
 import { logActivity, type ActivityPublication } from "./activity-log.js";
 import { publishAccountingActivities } from "./accounting-transaction.js";
-import { subscriptionCredentialIdentity, type SubscriptionIdentity } from "./subscription-identity.js";
+import { subscriptionCredentialIdentity, subscriptionIdentityKey, type SubscriptionIdentity } from "./subscription-identity.js";
 
 type Account = typeof aiSubscriptions.$inferSelect;
 type Price = typeof aiSubscriptionPrices.$inferInsert;
@@ -87,7 +87,11 @@ async function mergeInTransaction(db: Db, companyId: string, source: Account, ta
 
 export function subscriptionService(db: Db) {
   async function register(input: SubscriptionConnection, observed?: SubscriptionIdentity) {
-    const identity = observed ?? subscriptionCredentialIdentity(input.companyId, input.provider, input.credential);
+    const identity = { ...(observed ?? subscriptionCredentialIdentity(input.companyId, input.provider, input.credential)) };
+    // Only a successful provider observation may match another grant's billing
+    // identity or add its editors. Provisional rows are grant-scoped, even when
+    // two callers supply the same unverified credential or forged ID claims.
+    if (!observed?.verified) identity.accountKey = subscriptionIdentityKey(input.companyId, input.provider, ["grant", input.grantId, identity.credentialKey]);
     if (!observed) {
       const [cached] = await db.select().from(aiSubscriptionConnections).where(and(eq(aiSubscriptionConnections.companyId, input.companyId), eq(aiSubscriptionConnections.grantId, input.grantId)));
       if (cached?.credentialKey === identity.credentialKey && cached.connectionId === input.connectionId) return cached.subscriptionId;
@@ -108,9 +112,7 @@ export function subscriptionService(db: Db) {
       if (observed && binding && binding.credentialKey !== identity.credentialKey) return canonicalSubscriptionId(binding.subscriptionId, accounts);
       // A fresh credential-local hint cannot override a verified profile binding.
       if (!observed && binding?.credentialKey === identity.credentialKey) return canonicalSubscriptionId(binding.subscriptionId, accounts);
-      const [sameCredential] = !observed ? await tx.select().from(aiSubscriptionConnections).where(and(eq(aiSubscriptionConnections.companyId, input.companyId), eq(aiSubscriptionConnections.credentialKey, identity.credentialKey))).limit(1) : [];
-      const known = accounts.find(row => row.provider === input.provider && row.accountKey === identity.accountKey)
-        ?? (sameCredential ? accounts.find(row => row.id === sameCredential.subscriptionId) : undefined);
+      const known = accounts.find(row => row.provider === input.provider && row.accountKey === identity.accountKey);
       let account = known ? accounts.find(row => row.id === canonicalSubscriptionId(known.id, accounts))! : undefined;
       const previous = binding?.credentialKey === identity.credentialKey ? accounts.find(row => row.id === canonicalSubscriptionId(binding.subscriptionId, accounts)) : undefined;
       if (!account && previous && observed && !previous.identityVerified && !previous.mergedIntoId) {

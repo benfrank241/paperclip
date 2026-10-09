@@ -16,7 +16,7 @@ function fixture(): SubscriptionCostReport {
   return { canRefresh: true, asOf: "2026-10-08T00:00:00Z", activeCount: 1, unknownPriceCount: 0, unidentifiedAccountCount: 0,
     monthlyTotals: [{ currency: "USD", amountCents: "10000", estimatedCount: 1 }],
     api: emptyUsage(), subscription: { ...emptyUsage(), inputTokens: 100, cachedInputTokens: 50, outputTokens: 10 }, unknown: emptyUsage(), unattributedSubscription: emptyUsage(),
-    accounts: [{ id: "account-1", provider: "anthropic", name: "Alice’s Claude", ownerUserId: "alice", ownerName: "Alice", identityVerified: true,
+    accounts: [{ id: "account-1", provider: "anthropic", name: "Alice’s Claude", ownerUserId: "alice", ownerName: "Alice", shared: false, identityVerified: true,
       detectedPlan: "max_5x", observedAt: "2026-10-08T00:00:00Z", lastCheckedAt: "2026-10-08T00:00:00Z", refreshStatus: "ok", canEdit: true,
       price, usage: emptyUsage(), agents: [{ id: "leela", name: "Leela" }] }],
   };
@@ -96,6 +96,17 @@ describe("subscription costs", () => {
     const report = fixture(); report.accounts[0].canEdit = false;
     await render(report); await click("View details");
     expect([...document.querySelectorAll("button")].some(button => button.textContent === "Edit price")).toBe(false);
+  });
+  it("distinguishes personal seats with multiple owners from company-shared subscriptions", async () => {
+    const report = fixture();
+    report.accounts[0] = { ...report.accounts[0], ownerUserId: null, ownerName: null, shared: false, canEdit: false };
+    await render(report); await click("View details");
+    expect(document.body.textContent).toContain("Personal accounts");
+    expect(document.body.textContent).not.toContain("Shared ·");
+    report.accounts[0].shared = true;
+    await render(report);
+    expect(document.body.textContent).toContain("Shared ·");
+    expect(document.body.textContent).not.toContain("Personal accounts");
   });
   it("links only an explicitly chosen duplicate and keeps the target price", async () => {
     const report = fixture();
