@@ -1683,7 +1683,9 @@ class CodexAcpxSession implements HarnessSession {
         "item.delta",
         {
           kind: isReasoning ? "reasoning" : "agentMessage",
-          channel: isReasoning ? "summary" : "unknown",
+          // Output chunks are progress; the settled snapshot owns final text.
+          // Frozen pre-steering intervals must retain their commentary.
+          channel: isReasoning ? "summary" : "progress",
           text: output,
         },
         {

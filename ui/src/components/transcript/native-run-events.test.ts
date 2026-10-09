@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { HeartbeatRunEvent } from "@paperclipai/shared";
 import { nativeRunEventsToTranscript } from "./native-run-events";
-import { transcriptToTaskChatItems } from "../task-chat/transcript-adapter";
+import {
+  paperclipRunnerTimelineItems,
+  settledRunChildren,
+  splitTranscriptAtAnchors,
+  transcriptToTaskChatItems,
+} from "../task-chat/transcript-adapter";
 
 const RUN_ID = "10000000-0000-4000-8000-000000000001";
 
@@ -74,6 +79,35 @@ function runResult(summary: string): Record<string, unknown> {
 }
 
 describe("provider notice presentation", () => {
+  it("keeps native ACPX commentary when steering freezes its earlier interval", () => {
+    const entries = nativeRunEventsToTranscript([
+      itemEvent(1, "item.delta", "reasoning-1", {
+        kind: "reasoning", channel: "summary", text: "Inspecting the current task.",
+      }),
+      itemEvent(2, "item.delta", "message-before-steer", {
+        kind: "agentMessage", channel: "progress", text: "I am starting the requested work.",
+      }),
+      itemEvent(3, "item.completed", "steering-ack", {
+        kind: "steering_acknowledgement", status: "acknowledged", text: "Steering acknowledged for the active turn.",
+      }),
+      itemEvent(4, "item.delta", "message-after-steer", {
+        kind: "agentMessage", channel: "progress", text: "The correction is now applied.",
+      }),
+    ]);
+    const [before, after] = splitTranscriptAtAnchors(
+      entries, Date.parse("2026-08-25T18:00:00.000Z"), [Date.parse("2026-08-25T18:00:03.000Z")],
+    );
+    const frozen = settledRunChildren(paperclipRunnerTimelineItems(transcriptToTaskChatItems(before.entries, {
+      runId: RUN_ID, running: false,
+    })));
+    expect(frozen.filter(item => item.kind === "activity_phase").map(item => item.interstitial?.text))
+      .toContain("I am starting the requested work.");
+    const continued = transcriptToTaskChatItems(after.entries, { runId: RUN_ID, running: true });
+    expect(continued.find(item => item.kind === "message")).toMatchObject({
+      text: "The correction is now applied.", channel: "progress",
+    });
+  });
+
   it("omits unrelated information from saved chat without removing warnings or responses", () => {
     const legacyNotice = {
       schema: "paperclip.provider.notice.v1",

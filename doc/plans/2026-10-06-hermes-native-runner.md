@@ -1965,3 +1965,36 @@ The earlier cloud cold-start and ZIP timeouts remain failed. A separate
 foundation signoff-policy cancellation/reconciliation failure still needs
 qualification; the other current stack heads pass that shard. Full CI, review,
 browser controls, paid credentials and actual Daytona remain required.
+
+### 2026-10-09 interrupted charges and steering commentary
+
+An authenticated OpenRouter usage frame can report a charge before the HTTP
+stream fails. The receipt now retains that verified charge in the known
+subtotal while keeping request completeness and token totals unavailable.
+The pinned SDK regression reproduces the original lost charge, then passes
+after the fix, including a subsequent successful request. Conflicting receipts
+remain unpriced. All 13 billing tests pass; the combined pinned Python suite
+passes 53 tests and skips one real-Linux bubblewrap test on Mac. The runtime
+manifests change only the reviewed `billing.py` entry. The derived Mac and Linux
+closure pins still require fresh cloud provisioning before accepting them as
+clean consumer or remote proof.
+
+The Mac native browser attempt using source `78c57ca` and the verified cloud
+daemon shows reasoning and text before completion, then delivers the actual
+Steer control to the same native turn. Native tools write the corrected file
+and its authorized download matches. The attempt fails when earlier commentary
+disappears after steering. Stored events retain that message; the TypeScript
+ACPX driver incorrectly projects its channel as unknown. Deltas now project as
+progress, matching the Rust normalizer, while the settled snapshot remains
+final. All 64 driver and 174 transcript assertions pass. Fresh native browser
+acceptance is still required; the failed attempt is not relabeled.
+
+The announcement can appear after the dashboard URL settles. The company
+navigation test now retries the ordinary sidebar click with a bounded deadline,
+dismissing the actual card through its normal control if it blocks navigation.
+All 29 cases in the chat messaging browser file pass. UI and Runner TypeScript,
+the TypeScript-only build, and UI token gates pass. No local Docker, local Rust
+build, provider credential or paid model call is used. Current cloud signoff
+shards pass; an isolated server Git-streaming fixture times out on one stack
+head and remains failed. Fresh full CI, review, paid connection and actual
+Daytona qualification remain open.
