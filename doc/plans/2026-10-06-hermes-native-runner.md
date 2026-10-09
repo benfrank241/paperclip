@@ -1697,3 +1697,24 @@ succeeds, and a control after settlement is refused. This is credential-free
 native transport evidence. The earlier browser and regression failures remain
 failed; a fresh browser acceptance run and cloud checks remain required. No
 local Docker or Rust build is used.
+
+### 2026-10-08 Linux tool device access
+
+Current-source cloud qualification passed all 11 Mac native fixtures, but the
+Linux run failed overlapping restored-session writes: shell redirects could
+not open `/dev/null`, so Hermes fell back to a PID-based temporary name shared
+by separate tool PID namespaces. Ordinary bubblewrap bind mounts disable
+device access. The native tool sandbox now mounts bubblewrap's minimal `/dev`
+before applying the existing protected-path and assigned-skill overlays.
+Admission probes the actual character device and read/write redirects before
+staging credentials, rather than only executing `true` in a namespace.
+
+A focused policy regression fails before the change and passes afterwards.
+Four host-probe tests pass locally. A Linux-only regression exercises 16
+concurrent atomic writes, device redirects, hidden protected files and read-only
+assigned skills on the real host sandbox. Its live result requires fresh cloud
+CI; a Mac skip is not Linux evidence. Candidate closure pins replace only
+`tool_process.py` in the previously verified manifests; fresh provisioning must
+match them before any runtime is admitted. The prior Linux failure remains
+recorded. Both existing PR file sets remain unchanged, and no local Docker or
+Rust build is used. Full provider, product and Daytona qualification is pending.
