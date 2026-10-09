@@ -1886,6 +1886,11 @@ export function rehydrateRunnerdItemNotification(
   activeTurnId: string,
 ): Record<string, unknown> {
   const rawItem = record(rawParams.item);
+  if (rawParams.kind === "steering_acknowledgement" && Object.keys(rawItem).length === 0) {
+    // Preserve runnerd's flat receipt so the driver recognizes the transport
+    // echo. The acknowledged request emits the user-visible bound item once.
+    return { ...rawParams, threadId: openedThreadId, turnId: activeTurnId };
+  }
   const channel = rawItem.channel ?? rawParams.channel;
   const providerPhase = rawItem.phase ?? rawParams.providerPhase;
   const phase =
@@ -3663,7 +3668,9 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
         "turn.steer",
         {
           text,
-          turnId: this.#durableTurnId,
+          // ACPX owns the requested provider turn, which can differ from the
+          // durable PRP turn that scopes control-plane and semantic events.
+          turnId: this.options.provider === "acpx" ? expectedTurnId : this.#durableTurnId,
           providerTurnId: expectedTurnId,
           ...(params.mode === "follow_up" ? { mode: "follow_up" } : {}),
           ...(correlationId ? { correlationId } : {}),
