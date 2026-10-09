@@ -2616,16 +2616,18 @@ export function createToolGatewayService(
       );
     }
 
-    await db
-      .insert(toolActionDeliveries)
-      .values({
-        companyId: input.session.companyId,
-        actionRequestId: actionRequest.id,
-        issueId: input.session.issueId,
-        interactionId: interaction.id,
-      })
-      .onConflictDoNothing();
-    notifyDeliveryWork(db, DELIVERY_QUEUES.toolAction);
+    await db.transaction(async tx => {
+      await notifyDeliveryWork(tx, DELIVERY_QUEUES.toolAction);
+      await tx
+        .insert(toolActionDeliveries)
+        .values({
+          companyId: input.session.companyId,
+          actionRequestId: actionRequest.id,
+          issueId: input.session.issueId!,
+          interactionId: interaction.id,
+        })
+        .onConflictDoNothing();
+    });
 
     await writeToolCallEvent({
       invocationId: input.invocation.id,

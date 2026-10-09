@@ -1,4 +1,6 @@
-/** Optional post-commit fast paths. Startup and scheduled recovery remain authoritative. */
+import { signalDatabaseWork, subscribeDatabaseWork } from "@paperclipai/db";
+
+/** Topics for existing durable queues; register intent before their writes. */
 export const DELIVERY_QUEUES = {
   feedback: "feedback-exports",
   chatCompletion: "chat-completions",
@@ -8,16 +10,13 @@ export const DELIVERY_QUEUES = {
 } as const;
 export type DeliveryQueue = typeof DELIVERY_QUEUES[keyof typeof DELIVERY_QUEUES];
 
-// The database object is only an identity key. No method is wrapped or changed.
-const listeners = new WeakMap<object, Map<DeliveryQueue, () => void>>();
-export function notifyDeliveryWork(owner: object, queue: DeliveryQueue): void {
-  try { listeners.get(owner)?.get(queue)?.(); }
-  catch (error) { process.emitWarning(`Delivery notification failed: ${String(error)}`); }
+export async function notifyDeliveryWork(transaction: object, queue: DeliveryQueue): Promise<void> {
+  await signalDatabaseWork(transaction, queue);
 }
+// Public delivery notification observers only see settled work. The coordinator
+// uses the lower-level lifecycle subscription to also fence in-flight writes.
 export function subscribeDeliveryWork(owner: object, queue: DeliveryQueue, wake: () => void): () => void {
-  let queues = listeners.get(owner);
-  if (!queues) listeners.set(owner, queues = new Map());
-  if (queues.has(queue)) throw new Error(`Delivery worker already registered: ${queue}`);
-  queues.set(queue, wake);
-  return () => { queues.delete(queue); };
+  return subscribeDatabaseWork(owner, queue, event => {
+    if (event === "settled") wake();
+  });
 }

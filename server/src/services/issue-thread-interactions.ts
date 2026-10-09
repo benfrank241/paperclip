@@ -2830,12 +2830,12 @@ export function issueThreadInteractionService(
         .returning();
         if (!row) throw interactionAlreadyResolvedError();
         if (status === "accepted" || status === "rejected") {
+          await notifyDeliveryWork(tx, DELIVERY_QUEUES.connection);
           await tx.insert(connectionIntentDeliveries).values({ interactionId, companyId: issue.companyId }).onConflictDoNothing();
         }
         return row;
       });
       if (!updated) throw interactionAlreadyResolvedError();
-      if (status === "accepted" || status === "rejected") notifyDeliveryWork(db, DELIVERY_QUEUES.connection);
       await touchIssue(db, issue.id);
       const interaction = hydrateInteraction(
         updated,
@@ -5028,6 +5028,7 @@ export function issueThreadInteractionService(
         // This answer updates conversation history only. It must not resume
         // the completed source run or enqueue new work for the closed task.
         if (!historicalAnswer) {
+          await notifyDeliveryWork(tx, DELIVERY_QUEUES.question);
           await tx
             .insert(issueQuestionResponseDeliveries)
             .values(questionResponseDeliveryValues(answered));
@@ -5045,7 +5046,6 @@ export function issueThreadInteractionService(
         return row;
       });
 
-      notifyDeliveryWork(db, DELIVERY_QUEUES.question);
       await touchIssue(db, issue.id);
       const answered = hydrateInteraction(updated);
       await emitInteractionResolvedTelemetry(db, answered);

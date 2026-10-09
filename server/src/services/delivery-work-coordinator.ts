@@ -1,11 +1,8 @@
+import { subscribeDatabaseWork, databaseWorkPending, reconcileDatabaseWork } from "@paperclipai/db";
 import { createWorkScheduler } from "./work-scheduler.js";
-import { subscribeDeliveryWork, type DeliveryQueue } from "./delivery-work-notifications.js";
+import { type DeliveryQueue } from "./delivery-work-notifications.js";
 import { beginIdleTrackedWork } from "./task-admission.js";
 
-// Keep recovery until all writers participate in a proven idle/wake boundary.
-// It is deliberately independent of optional notifications, including writes
-// from another process or a transaction with a lost commit acknowledgement.
-export const DELIVERY_RECOVERY_INTERVAL_MS = 60_000;
 export function createDeliveryWorkCoordinator(input: {
   owner: object;
   canRun: () => boolean;
@@ -14,13 +11,6 @@ export function createDeliveryWorkCoordinator(input: {
   const scheduler = createWorkScheduler();
   const workers = new Map<DeliveryQueue, { wake: () => void; stop: () => Promise<void> }>();
   let stopped = false;
-  function scheduleRecovery() {
-    if (stopped || !workers.size) return;
-    scheduler.schedule("delivery-recovery", Date.now() + DELIVERY_RECOVERY_INTERVAL_MS, () => {
-      for (const worker of workers.values()) worker.wake();
-      scheduleRecovery();
-    });
-  }
 
   return {
     // Only these registered tasks are represented; not yet the whole instance.
@@ -33,22 +23,31 @@ export function createDeliveryWorkCoordinator(input: {
       if (stopped) throw new Error("Delivery coordinator is stopped");
       if (workers.has(queue)) throw new Error(`Delivery worker already registered: ${queue}`);
       let dirty = false;
+      let scheduledAt: number | null = null;
       let running: Promise<void> | null = null;
       let workerStopped = false;
       let controller: AbortController | null = null;
+      let finishIntent: (() => void) | undefined;
       function schedule(delay: number) {
-        if (!workerStopped) scheduler.schedule(queue, Date.now() + delay, start);
+        if (workerStopped) return;
+        const at = Date.now() + delay;
+        if (scheduledAt !== null && scheduledAt <= at) return;
+        scheduledAt = at;
+        scheduler.schedule(queue, at, start);
       }
       function start() {
         if (workerStopped || running) return;
         scheduler.cancel(queue);
+        scheduledAt = null;
         if (!input.canRun()) { schedule(task.retryMs); return; }
         dirty = false;
         const finish = beginIdleTrackedWork();
         const attempt = new AbortController();
         controller = attempt;
-        running = Promise.resolve().then(() => task.run(attempt.signal)).then(() => workerStopped ? false : task.hasPending()).then(pending => {
-          if (pending) schedule(task.retryMs);
+        running = Promise.resolve().then(() => reconcileDatabaseWork(input.owner, queue))
+          .then(() => workerStopped ? undefined : task.run(attempt.signal)).then(() => workerStopped ? false : task.hasPending()).then(pending => {
+          if (pending || databaseWorkPending(input.owner, queue)) schedule(task.retryMs);
+          else { finishIntent?.(); finishIntent = undefined; }
         }).catch(error => {
           schedule(task.retryMs);
           // Logging must never turn a recoverable sweep failure into an
@@ -66,16 +65,25 @@ export function createDeliveryWorkCoordinator(input: {
         dirty = true;
         if (!running) schedule(0);
       }
-      const unsubscribe = subscribeDeliveryWork(input.owner, queue, wake);
+      const unsubscribe = subscribeDatabaseWork(input.owner, queue, event => {
+        if (workerStopped) return;
+        if (databaseWorkPending(input.owner, queue)) {
+          finishIntent ??= beginIdleTrackedWork();
+          // Give the transaction time to settle. Its settlement notification
+          // replaces this deadline with an immediate wake on the normal path.
+          if (!running) schedule(task.retryMs);
+        }
+        if (event === "settled") wake();
+      });
       const worker = { wake, async stop() {
         workerStopped = true;
         controller?.abort(new Error("Delivery worker stopped"));
         unsubscribe();
         scheduler.cancel(queue);
         await running;
+        finishIntent?.(); finishIntent = undefined;
       } };
       workers.set(queue, worker);
-      if (workers.size === 1) scheduleRecovery();
       const ready = Promise.resolve().then(() => { start(); return running; });
       return { ready, wake };
     },

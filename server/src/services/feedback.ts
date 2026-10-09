@@ -2092,6 +2092,7 @@ export function feedbackService(db: Db, options: FeedbackServiceOptions = {}) {
           })
           .where(eq(feedbackVotes.id, savedVote.id));
 
+        if (sharedWithLabs) await notifyDeliveryWork(tx, DELIVERY_QUEUES.feedback);
         const [savedTrace] = await tx
           .insert(feedbackExports)
           .values({
@@ -2154,9 +2155,6 @@ export function feedbackService(db: Db, options: FeedbackServiceOptions = {}) {
           persistedSharingPreference,
           sharingEnabled: sharedWithLabs,
         };
-      }).then(result => {
-        if (result.sharingEnabled) notifyDeliveryWork(db, DELIVERY_QUEUES.feedback);
-        return result;
       }),
   };
 }

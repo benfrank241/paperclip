@@ -25,48 +25,54 @@ The database already closes idle pooled connections after 60 seconds and opens
 new connections on demand. The primary work is eliminating unnecessary queries
 and coordinating background work, connections, and hosting sleep.
 
-## First slice: explicit delivery notifications and shared scheduling
+## First slice: transaction-aware delivery notifications and shared scheduling
 
-This implementation covers the normal dispatch of five existing durable queues:
+Updated: 2026-10-09. This implementation covers five existing durable queues:
 
-- [x] JOB-04: feedback export enqueue nudges the app-owned delivery worker after commit.
-- [x] JOB-22: task status updates use existing explicit post-commit actions to nudge completion delivery. Existing activity notifications remain an additional fast path.
-- [x] JOB-23: the connection-intent resolver nudges continuation delivery after commit.
-- [x] JOB-25: the answer resolver nudges response delivery after commit.
-- [x] JOB-24: receipt insertion and review resolution nudge tool-action delivery after commit.
-- [x] One in-process work scheduler owns the five queues' retry deadlines and shared recovery deadline, with one timer and an inspectable earliest deadline.
-- [x] Real PostgreSQL producer/delivery tests and deterministic scheduler tests cover commit boundaries, restart recovery, missed notifications, concurrent nudges, retry, drain/standby, and awaited shutdown.
-- [ ] Prove a complete writer-admission and idle/resume boundary before disabling shared recovery while quiet.
+- [x] JOB-04: feedback exports register intent before the export write.
+- [x] JOB-22: completion receipts register intent inside their transaction, including caller-owned and nested transactions. No extra post-commit action is needed from callers.
+- [x] JOB-23: connection continuations register intent before enqueue.
+- [x] JOB-25: question answers register intent before enqueue.
+- [x] JOB-24: tool receipts and review resolution register intent before enqueue.
+- [x] `createDb` centrally defers delivery wakes until the outer transaction settles. Dedicated child pools share the owning client's signal scope.
+- [x] One scheduler owns pending-work and failure retries. Empty, settled queues have no recurring deadline or database scan.
+- [x] Unresolved local writes prevent idle admission. Recovery probes PostgreSQL's transaction status before scanning the existing queue and clears the hold once both are settled.
+- [x] Tests cover nested commits, rollback, late commit/abort after a lost client response, concurrent writes during a sweep, worker replacement, restart recovery, drain/standby, and shutdown.
+- [ ] Prove the complete instance writer-admission and idle/resume boundary across all other work.
 - [ ] Migrate other actual scheduled work and expose the whole instance's earliest deadline to an external waker.
 - [ ] Verify actual app and database sleep on the hosting providers.
 
-The existing delivery rows remain authoritative. No new tables, schema changes,
-database transaction wrappers, or permanent uncertain-commit holds are introduced.
-Notifications use the root database object only as an in-memory instance identity;
-they do not query it or modify its methods. A service constructed with a caller's
-transaction cannot notify a root subscriber itself. The transaction owner must
-flush its explicit post-commit effects; scheduled recovery covers omitted effects,
-other writers/replicas, and failures after a commit that lose the acknowledgement.
+Existing delivery rows remain authoritative; no tables or migrations are added.
+A producer adds one awaited `notifyDeliveryWork(tx, queue)` before its write.
+`createDb().transaction()` and nested savepoints are instrumented centrally. The
+first opted-in write fetches the outer transaction's XID; unrelated transactions
+add no SQL. A rejected transaction with a known XID is reconciled with
+`pg_xact_status` before the queue scan. An empty scan cannot discharge an
+in-progress transaction. Committed, aborted, or aged-out XIDs can be discharged
+after scanning. A failed status query retains the hold and a retry deadline.
 
-Normal dispatch is event-driven. Empty queues no longer own five-second or
-heartbeat-cadence polling. A shared **60-second recovery pass is intentionally
-retained**, including when the process has no user activity, until the idle
-boundary is proven. Outstanding deliveries and errors retain the existing retry
-cadence (five seconds for feedback, heartbeat interval for the other queues).
-A blocked sweep does not issue SQL during warm standby or idle drain; admission
-is checked again before each run. Shutdown cancels deadlines and awaits active
-sweeps. Feedback uploads have a 30-second deadline and accept shutdown
-cancellation; unstarted exports stay pending. Vote routes return after saving
-and notifying, without waiting for uploads. Pending tool receipts include reviews awaiting a later terminal status.
+The scheduler retains startup sweeps, retry deadlines while durable work exists,
+and retries after failures. There is no unconditional 60-second recovery pass.
+Feedback flushes remain serialized and cancellable, with a 30-second upload
+limit. Vote routes return after saving rather than waiting for upload. Tool
+receipts awaiting review or execution still retain their retry cadence.
 
-This is a prerequisite for sleep, not proof of a sleeping stack. The scheduler's
-`nextWakeAt` covers only these registered tasks, not every existing application
-loop. Database pool lifecycle, provider sleep, the final idle reconciliation, and
-external wake registration remain separate work. Unknown commits are recovered
-by the retained sweep; this change does not establish a new sleep-safety proof.
+**Scope:** notifications and unresolved-XID tracking are process-local to a
+`createDb` owner and its dedicated child pools. They do not observe direct SQL,
+an independently created client, or another process. Such writers need an
+explicit wake/reconciliation integration before this mechanism can support
+them. Startup scans recover already committed durable rows; they do not prove
+that transactions still running in an old process have finished. Cross-process
+handoff/fencing is separate work, as is PostgreSQL failover during uncertainty.
 
-Implementation: `server/src/services/work-scheduler.ts`,
-`delivery-work-coordinator.ts`, and `delivery-work-notifications.ts`.
+This removes these five empty polling loops; it does not establish whole-stack
+sleep. `nextWakeAt` covers only registered queues. Database connection teardown,
+other background loops, full idle reconciliation, and external wake registration
+remain separate work.
+
+Implementation: `packages/db/src/work-signals.ts`,
+`server/src/services/work-scheduler.ts`, `delivery-work-coordinator.ts`, and
+`delivery-work-notifications.ts`.
 
 ## Using this checklist
 

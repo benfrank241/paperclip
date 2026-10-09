@@ -1,3 +1,4 @@
+import { notifyDeliveryWork, DELIVERY_QUEUES } from "./delivery-work-notifications.js";
 import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import { agents, agentWakeupRequests, chatCompletionDeliveries as deliveries, chatTaskHandoffs as handoffs,
   heartbeatRuns, issueComments, issueDocuments, issues, type Db } from "@paperclipai/db";
@@ -38,6 +39,7 @@ export async function recordChatCompletion(tx: Connection, before: Issue, after:
   if (after.status !== "done") return false;
   const [handoff] = await tx.select().from(handoffs).where(and(eq(handoffs.taskId, after.id), eq(handoffs.companyId, after.companyId)));
   if (!handoff) return false;
+  await notifyDeliveryWork(tx, DELIVERY_QUEUES.chatCompletion);
   await tx.insert(deliveries).values({ companyId: after.companyId, taskId: after.id, statusVersion: after.statusVersion }).onConflictDoNothing();
   return true;
 }

@@ -1,4 +1,3 @@
-import { notifyDeliveryWork, DELIVERY_QUEUES } from "./delivery-work-notifications.js";
 import { recordChatHandoff, recordChatCompletion, existingChatCompletionReply, acknowledgeChatCompletionReply } from "./chat-completion-delivery.js";
 import { mirrorSlackBoardComment, slackBoardReplyBindings } from "./slack-board-messages.js";
 import { assertAgentRunWriteAllowed } from "../agent-run-cancellation.js";
@@ -249,7 +248,7 @@ const ISSUE_WAKE_DIAGNOSTICS_ACTIVITY_ACTIONS = [
   "issue.tree_hold_wakeup_deferred",
 ] as const;
 
-export type IssuePostCommitAction = { type: "wake_chat_completions" } | {
+export type IssuePostCommitAction = {
   type: "cancel_native_question_run";
   runId: string;
   issueId: string;
@@ -261,15 +260,11 @@ export async function executeIssuePostCommitActions(
   db: Db,
   actions: readonly IssuePostCommitAction[],
 ): Promise<void> {
-  if (actions.some(action => action.type === "wake_chat_completions")) {
-    notifyDeliveryWork(db, DELIVERY_QUEUES.chatCompletion);
-  }
-  const cancellations = actions.filter(action => action.type === "cancel_native_question_run");
-  if (cancellations.length === 0) return;
+  if (actions.length === 0) return;
   const { heartbeatService } = await import("./heartbeat.js");
   const heartbeat = heartbeatService(db);
   const cancelledRunIds = new Set<string>();
-  for (const action of cancellations) {
+  for (const action of actions) {
     if (cancelledRunIds.has(action.runId)) continue;
     cancelledRunIds.add(action.runId);
     try {
@@ -11302,9 +11297,7 @@ export function issueService(db: Db) {
           agentId: actorAgentId ?? null,
           userId: actorUserId ?? null,
         });
-        if (await recordChatCompletion(tx, receiptExisting, updated)) {
-          queuedPostCommitActions.push({ type: "wake_chat_completions" });
-        }
+        await recordChatCompletion(tx, receiptExisting, updated);
         // An operator explicitly choosing a disposition owns that decision,
         // including choosing In Review while the conversation is Idle.
         if (actorUserId && issueData.status !== undefined) {

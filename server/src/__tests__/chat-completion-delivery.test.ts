@@ -81,7 +81,7 @@ const support = await getEmbeddedPostgresTestSupport();
       expect(f.wakeup).toHaveBeenCalledTimes(2);
     } finally { await restarted.stop(); }
   });
-  it("leaves caller-owned transaction notifications to its explicit post-commit effects", async () => {
+  it("automatically notifies after a caller-owned transaction commits", async () => {
     const f = await seed();
     const notified = vi.fn();
     const unsubscribe = subscribeDeliveryWork(db, DELIVERY_QUEUES.chatCompletion, notified);
@@ -91,7 +91,8 @@ const support = await getEmbeddedPostgresTestSupport();
         await issueService(db).update(f.task.id, { status: "done" }, tx, [], actions);
         expect(notified).not.toHaveBeenCalled();
       });
-      expect(notified).not.toHaveBeenCalled();
+      expect(notified).toHaveBeenCalledTimes(1);
+      expect(actions).toEqual([]);
       await executeIssuePostCommitActions(db, actions);
       expect(notified).toHaveBeenCalledTimes(1);
       const rolledBack: IssuePostCommitAction[] = [];
