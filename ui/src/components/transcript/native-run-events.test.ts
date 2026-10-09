@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { HeartbeatRunEvent } from "@paperclipai/shared";
 import { nativeRunEventsToTranscript } from "./native-run-events";
+import { transcriptToTaskChatItems } from "../task-chat/transcript-adapter";
 
 const RUN_ID = "10000000-0000-4000-8000-000000000001";
 
@@ -118,6 +119,23 @@ describe("provider notice presentation", () => {
 });
 
 describe("nativeRunEventsToTranscript", () => {
+  it("keeps JSON printed through native command output intact in the expanded tool", () => {
+    const output = JSON.stringify({ content: "hello", count: 3 });
+    const entries = nativeRunEventsToTranscript([
+      event(1, "tool.execution.started", {
+        schema: "paperclip.tool.execution.v1", executionId: "json-command",
+        transport: "process", operation: "execute", name: "terminal", status: "running",
+        input: { cmd: "print JSON" },
+      }),
+      event(2, "tool.execution.completed", {
+        schema: "paperclip.tool.execution.v1", executionId: "json-command",
+        transport: "process", operation: "execute", name: "terminal", status: "completed", output,
+      }),
+    ]);
+    const items = transcriptToTaskChatItems(entries, { runId: RUN_ID, running: false });
+    expect(items).toContainEqual(expect.objectContaining({ kind: "tool", detail: output }));
+  });
+
   it.each(["command", "cmd"])("uses native %s arguments for process previews and preserves plain results", (key) => {
     const input = { [key]: "printf 'native output'", cwd: "/workspace" };
     const transcript = nativeRunEventsToTranscript([

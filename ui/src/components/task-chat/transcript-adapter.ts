@@ -566,9 +566,17 @@ function formatToolResultDetail(content: unknown): string | undefined {
   try {
     const result: unknown = typeof content === "string" ? JSON.parse(content) : content;
     const output = objectRecord(result);
-    const parts = [output.output ?? output.stdout ?? output.content, output.stderr, output.error]
+    const commandFields = ["output", "stdout", "stderr", "error"];
+    const isCommandResult = typeof output.exit_code === "number"
+      && Number.isFinite(output.exit_code)
+      && Object.entries(output).every(([key, value]) =>
+        key === "exit_code" || (commandFields.includes(key)
+          && (value == null || typeof value === "string")));
+    const parts = commandFields.map((key) => output[key])
       .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
-    if (parts.length > 0) {
+    // Only unwrap the complete command-result shape. Arbitrary JSON printed by
+    // a command (including objects with a "content" field) remains inspectable.
+    if (isCommandResult && parts.length > 0) {
       text = [...new Set(parts)].join("\n");
       if (typeof output.exit_code === "number" && output.exit_code !== 0) {
         text += `\nExit code: ${output.exit_code}`;

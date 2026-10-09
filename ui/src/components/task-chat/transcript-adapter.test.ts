@@ -403,6 +403,28 @@ describe("transcriptToTaskChatItems tool_call updates", () => {
     ]);
   });
 
+  it.each([
+    { content: "hello", count: 3 },
+    { output: "hello", count: 3, exit_code: 0 },
+    { stdout: "hello", error: { code: "missing_input" }, exit_code: 2 },
+  ])("preserves every field in arbitrary JSON tool output: %j", (output) => {
+    const content = JSON.stringify(output);
+    const items = transcriptToTaskChatItems([
+      toolCall("terminal", { command: "print JSON" }),
+      { kind: "tool_result", ts: TS, toolUseId: "tool-terminal", content, isError: false },
+    ], opts);
+    expect(items).toMatchObject([{ kind: "tool", detail: content }]);
+  });
+
+  it("retains distinct output streams in a known command result", () => {
+    const items = transcriptToTaskChatItems([
+      toolCall("terminal", { command: "run checks" }),
+      { kind: "tool_result", ts: TS, toolUseId: "tool-terminal", isError: true,
+        content: JSON.stringify({ output: "Progress", stdout: "Checks failed", stderr: "Missing input", exit_code: 2 }) },
+    ], opts);
+    expect(items).toMatchObject([{ kind: "tool", detail: "Progress\nChecks failed\nMissing input\nExit code: 2" }]);
+  });
+
   function update(toolUseId: string, status: string): TranscriptEntry {
     // Mirrors what a persisted acpx tool_call_update line parses to: the
     // literal placeholder name plus a synthesized { text, status } input.

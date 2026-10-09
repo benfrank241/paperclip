@@ -72,7 +72,7 @@ pub enum AcpxProviderStateEvent {
     SemanticResult(AcpxSemanticResult),
     AssistantMessage {
         turn_id: String,
-        message_id: Option<String>,
+        provider_item_id: Option<String>,
         text: String,
     },
     TurnTerminal {
@@ -110,6 +110,7 @@ pub struct AcpxProviderState {
     plan_revision: u64,
     assistant_text: String,
     assistant_message_id: Option<String>,
+    assistant_item_id: Option<String>,
     pi_assistant_message: Option<String>,
     pi_assistant_message_ids: BTreeSet<String>,
     pending_tools: BTreeMap<String, AcpxPendingTool>,
@@ -129,6 +130,7 @@ impl AcpxProviderState {
             plan_revision: 0,
             assistant_text: String::new(),
             assistant_message_id: None,
+            assistant_item_id: None,
             pi_assistant_message: None,
             pi_assistant_message_ids: BTreeSet::new(),
             pending_tools: BTreeMap::new(),
@@ -223,6 +225,7 @@ impl AcpxProviderState {
         self.plan_revision = 0;
         self.assistant_text.clear();
         self.assistant_message_id = None;
+        self.assistant_item_id = None;
         self.pi_assistant_message = None;
         self.pi_assistant_message_ids.clear();
         self.semantic_result = None;
@@ -389,13 +392,14 @@ impl AcpxProviderState {
                 if status == AcpxTurnStatus::Completed && !self.assistant_text.is_empty() {
                     events.push(AcpxProviderStateEvent::AssistantMessage {
                         turn_id: turn_id.clone(),
-                        message_id: self.assistant_message_id.take(),
+                        provider_item_id: self.assistant_item_id.take(),
                         text: std::mem::take(&mut self.assistant_text),
                     });
                 } else {
                     self.assistant_text.clear();
                 }
                 self.assistant_message_id = None;
+                self.assistant_item_id = None;
                 self.pi_assistant_message = None;
                 self.pi_assistant_message_ids.clear();
                 events.push(AcpxProviderStateEvent::TurnTerminal {
@@ -529,7 +533,7 @@ impl AcpxProviderState {
             let starts_new_message = provider_message_id.as_ref().is_some_and(|message_id| {
                 self.assistant_message_id
                     .as_ref()
-                    .is_none_or(|current| current != message_id)
+                    .is_some_and(|current| current != message_id)
             });
             let raw_text = payload
                 .get("text")
@@ -594,6 +598,7 @@ impl AcpxProviderState {
             // the task UI and can promote intermediate prose as final output.
             if starts_new_message || native_boundary_clears {
                 self.assistant_text.clear();
+                self.assistant_item_id = None;
             }
             if self
                 .assistant_text
@@ -662,7 +667,7 @@ impl AcpxProviderState {
             .as_deref()
             .expect("a decoded runtime event has a turn binding");
         let fallback_item_id = format!("acpx-event-{}", event.sequence);
-        let events = normalize_acpx_runtime_event(
+        let mut events = normalize_acpx_runtime_event(
             kind,
             &payload,
             tool_operation,
@@ -670,6 +675,26 @@ impl AcpxProviderState {
             turn_id,
             self.provider_requests,
         );
+        if kind == AcpxRuntimeEventKind::TextDelta
+            && payload.get("piMessageHistory").and_then(Value::as_bool) != Some(true)
+        {
+            // A provider can begin identifying a message after its first delta.
+            // Adopt that native ID for boundary detection, but retain the item's
+            // already-published identity so its prefix and final snapshot agree.
+            for activity in &mut events {
+                let item = activity
+                    .payload
+                    .as_object_mut()
+                    .expect("a normalized ACPX text delta is an object");
+                let item_id = item
+                    .get("itemId")
+                    .and_then(Value::as_str)
+                    .expect("a normalized ACPX text delta has an item identity")
+                    .to_owned();
+                let retained_id = self.assistant_item_id.get_or_insert(item_id);
+                item.insert("itemId".to_owned(), Value::String(retained_id.clone()));
+            }
+        }
         if let Some(revision) = next_plan_revision {
             self.plan_revision = revision;
         }

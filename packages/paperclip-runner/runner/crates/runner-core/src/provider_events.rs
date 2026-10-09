@@ -378,13 +378,10 @@ pub fn project_acpx_state_event(
         }
         AcpxProviderStateEvent::AssistantMessage {
             turn_id,
-            message_id,
+            provider_item_id,
             text,
         } => {
             require_projected_turn(context, turn_id)?;
-            let provider_item_id = message_id
-                .as_deref()
-                .map(|message_id| acpx_message_item_id(message_id, turn_id, "assistant-message"));
             one(
                 "item.completed",
                 EventPriority::P1,

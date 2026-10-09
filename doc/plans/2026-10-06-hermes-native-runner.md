@@ -1,8 +1,8 @@
 # Hermes native runner implementation
 
-Status (updated 2026-10-07): implementation candidate; **not qualified**.
-Current branch: `codex/hermes-qualification`; stacked on
-`codex/hermes-native-runner` and `codex/hermes-routines`.
+Status (updated 2026-10-09): implementation candidate; **not qualified**.
+Current branch: `codex/hermes-release-qualification`; stacked on
+`codex/hermes-qualification`, `codex/hermes-native-runner` and `codex/hermes-routines`.
 
 ## Accepted outcome
 
@@ -20,9 +20,9 @@ Keep the existing Hermes local/gateway adapters compatible.
 - [x] Managed memory/skills, per-turn lifecycle and real routine-service binding.
 - [x] UI/configuration/contracts, documentation and package distribution.
 - [x] Focused TS/Python tests and production-path macOS execution with a deterministic model server.
-- [x] Complete final Rust/regression checks and resolve or classify failures.
+- [ ] Complete final Rust/regression checks and resolve or classify failures on the current source.
 - [ ] Browser acceptance, Linux/Daytona execution and connection-method qualification.
-- [x] Reviewable draft PR stack, green CI and fresh Greptile 5/5 on the implementation heads.
+- [ ] Reviewable draft PR stack, green CI and fresh Greptile 5/5 on the current implementation heads.
 - [x] Complete the final local aggregate test invocation and classify its failures.
 - [ ] Complete live release qualification.
 
@@ -1884,3 +1884,57 @@ After terminal server results and empty open-file checks, only the four owned
 browser scratch roots are removed. Logs, screenshots, failed attempts and
 required runtime assets remain available. No local Docker or Rust build runs,
 and no paid inference or credential transfer occurs in these browser checks.
+
+### 2026-10-09 prefix adoption and complete JSON tool output
+
+Native fixture run `37909868256` passes on Mac arm64 and Linux amd64 at
+`1af3bd2f102f74a3431b801950f92765813fe008`. It runs the production Hermes
+path against a deterministic loopback model without credentials. The same
+source fails the broader Rust suite's existing idless-prefix oracle. The
+reducer now retains the first normalized item identity while adopting native
+IDs for boundary detection. The original full-prefix text assertion remains
+unchanged. Additional assertions require prefix/continuation/final identity
+agreement and separate identity for a subsequent native message. Fresh cloud
+Rust and native execution are required for this changed source.
+
+The expandable tool detail now unwraps only the complete command-result
+shape. Arbitrary JSON, including `content` and extra fields, remains intact.
+Regression coverage includes a JSON string supplied through native command
+`output` and distinct output streams in a known command wrapper. All 173
+transcript/adapter/golden UI assertions pass. UI TypeScript and token gates
+pass. This does not replace fresh rendered native browser acceptance.
+
+The runtime-skills database teardown drains background executions before
+truncation instead of assuming a terminal row or a fixed delay means writes
+have stopped. Two route suites load their cold graph in 30-second setup hooks
+after mock reset; request deadlines and original assertions remain unchanged.
+All 40 focused server tests, including real PostgreSQL, and server TypeScript
+pass. Earlier CI failures retain their verdict. All four PRs remain draft;
+paid connection, subscription, credential lifecycle and actual Daytona proof
+remain required.
+
+### 2026-10-09 company-scoped canonical agent recovery
+
+An authorized UUID lookup can return an agent from another accessible company.
+The canonical cache now receives that agent only under its actual company,
+and the redirect uses that company's explicit prefix. Route and selection
+synchronization yield to an explicit organization switch. Company page memory
+waits for the canonical alias instead of retaining an unverified agent UUID;
+legacy remembered UUID paths fall back to the company dashboard.
+
+A real-app browser fixture opens company A's agent UUID under company B's
+prefix, follows the canonical redirect to A, switches back through the actual
+organization menu, and opens B's same-named agent. While B's authorized alias
+response is held, A's sentinel title must be absent. The released response
+must show B's title, selection and route. All ten browser cases pass, including
+the original nine exact-retry cases. The company-isolation and retry-denial
+screenshots are visually inspected. All 195 focused UI assertions, UI
+TypeScript and token gates pass. Inference is scripted; these checks use no
+model credentials and do not qualify paid Hermes behavior.
+
+Earlier failed browser attempts remain recorded. One server-start attempt
+fails because macOS's 32-segment shared-memory limit is reached. Only
+unattached 56-byte segments from this task's exited PostgreSQL processes are
+released. After closed-process and empty open-file checks, disposable test
+homes and caches are removed; logs, screenshots and required runtime assets
+remain. No local Docker or Rust build runs.

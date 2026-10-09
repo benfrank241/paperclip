@@ -108,7 +108,10 @@ extend the task's execution deadline.
 - Assistant message identity v2 includes the provider message and provider turn.
   A final snapshot replaces only its own deltas, retaining preceding commentary
   and steered messages. Providers without message IDs retain the original
-  identity; existing PRP v1 events replay unchanged. This is an identity change
+  identity. If a provider first supplies an ID after an unlabelled prefix,
+  that prefix and the continuation retain one item identity and one final
+  snapshot. A later distinct native message gets its own item. Existing PRP v1
+  events replay unchanged. This is an identity change
   within the current event contract, not a new wire field or transcript rewrite.
 - Native questions publish a 65,536-character limit for text and custom
   answers. The form, canonical response validation and bridge count UTF-16

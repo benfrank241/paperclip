@@ -151,7 +151,7 @@ fn keeps_durable_correlation_separate_from_the_active_provider_turn() {
         &context,
         &AcpxProviderStateEvent::AssistantMessage {
             turn_id: "provider-turn-1".to_owned(),
-            message_id: None,
+            provider_item_id: None,
             text: "Done".to_owned(),
         },
     )
@@ -339,7 +339,7 @@ fn projects_assistant_terminal_and_diagnostic_events_fail_closed() {
 
     let assistant = project(AcpxProviderStateEvent::AssistantMessage {
         turn_id: "turn-1".to_owned(),
-        message_id: Some("opaque-provider-message".to_owned()),
+        provider_item_id: Some("opaque-provider-message".to_owned()),
         text: "Done".to_owned(),
     });
     assert_eq!(assistant[0].event_type, "item.completed");
@@ -629,7 +629,7 @@ fn runtime_request_projection_preserves_durable_identity_boundaries() {
 fn recovery_preserves_the_preceding_provider_turn_answer() {
     let first = project(AcpxProviderStateEvent::AssistantMessage {
         turn_id: "turn-1".to_owned(),
-        message_id: None,
+        provider_item_id: None,
         text: "Useful answer".to_owned(),
     });
     let mut recovery = context();
@@ -638,7 +638,7 @@ fn recovery_preserves_the_preceding_provider_turn_answer() {
         &recovery,
         &AcpxProviderStateEvent::AssistantMessage {
             turn_id: "recovery-turn".to_owned(),
-            message_id: None,
+            provider_item_id: None,
             text: "Recovery update".to_owned(),
         },
     )
@@ -673,6 +673,7 @@ fn assistant_message_identity_matches_its_snapshot_and_is_scoped_to_the_provider
             1,
         )
         .remove(0);
+        let provider_item_id = activity.payload["itemId"].as_str().unwrap().to_owned();
         let streamed = project(AcpxProviderStateEvent::Activity(activity.clone()));
         assert_eq!(
             streamed,
@@ -680,7 +681,7 @@ fn assistant_message_identity_matches_its_snapshot_and_is_scoped_to_the_provider
         );
         let final_message = project(AcpxProviderStateEvent::AssistantMessage {
             turn_id: "turn-1".to_owned(),
-            message_id: message_id.map(str::to_owned),
+            provider_item_id: Some(provider_item_id.clone()),
             text: "Done".to_owned(),
         });
         assert_eq!(
@@ -697,7 +698,7 @@ fn assistant_message_identity_matches_its_snapshot_and_is_scoped_to_the_provider
             &recovery,
             &AcpxProviderStateEvent::AssistantMessage {
                 turn_id: "recovery-turn".to_owned(),
-                message_id: message_id.map(str::to_owned),
+                provider_item_id: Some(provider_item_id.clone()),
                 text: "Recovered".to_owned(),
             },
         )
