@@ -116,7 +116,7 @@ export function slackChatRegistrationService(db: Db, options: SlackSetupOptions)
         if (typeof installerId !== "string" || !/^[UW][A-Z0-9]+$/.test(installerId) || installerId === result.bot_user_id) throw providerFailure("slack_install_account_missing");
         if (row.managerGrantId) {
           const grant = await managerGrants.get(row.managerGrantId, row.companyId, actor);
-          if (installerId !== grant.slackUserId || teamId !== grant.workspaceId) throw providerFailure("slack_install_identity_mismatch");
+          if (grant.status !== "active" || installerId !== grant.slackUserId || teamId !== grant.workspaceId) throw providerFailure("slack_install_identity_mismatch");
         }
         await endpoint(row.endpointId, actor);
         // Reauthorization reuses the runtime signing secret after staging was cleaned.
