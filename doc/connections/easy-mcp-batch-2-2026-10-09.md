@@ -64,8 +64,8 @@ Account-profile and domain results remain private and are not committed. Permiss
 - Durable override suite: 3 passed.
 - Brand validation: 101 identities passed.
 - Full connector service suite: 420 passed, including the four-case JSON-token/access regression and existing managed OAuth lifecycle coverage.
-- Recursive typecheck: passed; server typecheck passed again after the final access-marker refinement.
-- Recursive production build: passed; server build passed again after the final access-marker refinement.
-- Full repository Vitest run: still running; update with its final result before handoff.
+- Recursive typecheck: passed again after rebasing onto current master.
+- Recursive production build: passed again after rebasing onto current master.
+- Full local repository Vitest was started before the rebase and cancelled as superseded while still in the general-server phase. It is not counted as a completed pass. Broad current-head verification is tracked in [PR #15686 checks](https://github.com/paperclipai/paperclip/pull/15686/checks); the complete connector service suite passed separately against the final production code.
 
 The local host reached its macOS System V shared-memory limit during a service restart. Only stale, unattached user-owned segments with dead creator/operator processes were reclaimed; other running apps and their databases were left intact. This host resource failure is separate from provider login/approval gates.
