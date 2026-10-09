@@ -87,6 +87,8 @@ interface AcpxRuntimeGoalState {
 
 interface AcpxRuntimeExtensionTurn {
   nativeTurnToken?: string;
+  nativeTurnReady: Promise<void>;
+  acknowledgeNativeTurn(): void;
   requestId: string;
   sessionId: string;
   controller: AbortController;
@@ -315,6 +317,7 @@ export async function openQualifiedAcpxRuntime(
     if (options.profile.agent === "hermes" && method === "_hermes/turn_started") {
       if (!active || !ownsExtensionTurn(active, params) || params.version !== 1 || typeof params.turnToken !== "string" || !/^[0-9a-f-]{36}$/.test(params.turnToken) || active.nativeTurnToken) throw new Error("Invalid Hermes turn binding");
       active.nativeTurnToken = params.turnToken;
+      active.acknowledgeNativeTurn();
       return;
     }
     // Stop revokes requests and activity immediately. Only the admitted native
@@ -1070,7 +1073,11 @@ function runtimePort(
       await abortableExtensionResult(active.promptStarted, active.signal);
       active.signal.throwIfAborted();
       if (extensionBoundary.active !== active) throw new Error("ACPX extension control turn expired");
-      if (method === "_hermes/steer" && !active.nativeTurnToken) throw new Error("Hermes has not acknowledged an active turn");
+      if (method === "_hermes/steer") {
+        await waitForHermesNativeTurn(active);
+        active.signal.throwIfAborted();
+        if (extensionBoundary.active !== active) throw new Error("ACPX extension control turn expired");
+      }
       const response = await abortableExtensionResult(runtime.requestExtension!({
         handle, method, params: { sessionId: identity.backendSessionId, message: text,
           ...(method === "_hermes/steer" ? { version: 1, turnToken: active.nativeTurnToken } : {}),
@@ -1419,7 +1426,10 @@ function runtimePort(
       if (extensionBoundary.active) throw new Error("ACPX runtime already has an active turn");
       const approval = new AbortController();
       const controller = new AbortController();
+      let acknowledgeNativeTurn!: () => void;
+      const nativeTurnReady = new Promise<void>(resolve => { acknowledgeNativeTurn = resolve; });
       const extensionTurn: AcpxRuntimeExtensionTurn = {
+        nativeTurnReady, acknowledgeNativeTurn,
         requestId: input.requestId, sessionId: identity.backendSessionId, controller,
         signal: input.signal ? AbortSignal.any([controller.signal, input.signal, approval.signal]) : AbortSignal.any([controller.signal, approval.signal]),
         promptStarted: Promise.resolve(),
@@ -2056,6 +2066,17 @@ async function abortableExtensionResult<T>(result: Promise<T>, signal: AbortSign
   });
   try { return await Promise.race([result, cancellation]); }
   finally { if (rejectAbort) signal.removeEventListener("abort", rejectAbort); }
+}
+
+async function waitForHermesNativeTurn(active: AcpxRuntimeExtensionTurn): Promise<void> {
+  if (active.nativeTurnToken) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await abortableExtensionResult(Promise.race([active.nativeTurnReady, new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("Hermes native turn acknowledgement timed out")), 5_000);
+      timer.unref();
+    })]), active.signal);
+  } finally { if (timer) clearTimeout(timer); }
 }
 
 function goalCapabilityFromAcpMessage(
