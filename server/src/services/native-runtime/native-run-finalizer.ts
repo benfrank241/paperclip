@@ -965,7 +965,7 @@ export async function repairCommittedNativeChatResponse(
         terminal.runTerminalState === "succeeded" &&
         terminal.turnTerminalState === "completed" &&
         terminal.reportedWorkDisposition === "done" &&
-        (await resolveChatRunPresentationAuthorizationReason(tx, input)) === null
+        (await resolveChatRunPresentationAuthorizationReason(tx, input)) === "internal_agent_write"
       ) {
         const rows = await tx.select({ seq: heartbeatRunEvents.seq, payload: heartbeatRunEvents.payload })
           .from(heartbeatRunEvents).where(and(
@@ -996,7 +996,8 @@ export async function repairCommittedNativeChatResponse(
         });
         if (!resolved.text || resolved.decision.commentAction !== "create") return false;
         const comment = await issueService(db).addComment(input.issueId, resolved.text,
-          { agentId: run.agentId, runId: run.id }, { completionReply: true }, tx);
+          { agentId: run.agentId, runId: run.id },
+          { authorizationReason: "internal_agent_write", completionReply: true }, tx);
         await tx.update(heartbeatRuns).set({
           resultJson: sql`coalesce(${heartbeatRuns.resultJson}, '{}'::jsonb) || ${JSON.stringify({
             presentationDecision: { ...resolved.decision, commentId: comment.id,
