@@ -1983,10 +1983,10 @@ The Mac native browser attempt using source `78c57ca` and the verified cloud
 daemon shows reasoning and text before completion, then delivers the actual
 Steer control to the same native turn. Native tools write the corrected file
 and its authorized download matches. The attempt fails when earlier commentary
-disappears after steering. Stored events retain that message; the TypeScript
-ACPX driver incorrectly projects its channel as unknown. Deltas now project as
-progress, matching the Rust normalizer, while the settled snapshot remains
-final. All 64 driver and 174 transcript assertions pass. Fresh native browser
+disappears after steering. Stored events retain that message; inspection finds
+lossy channel projection in the TypeScript paths. The direct ACPX driver's
+deltas now project as progress, matching the Rust normalizer, while the settled
+snapshot remains final. All 64 driver and 174 transcript assertions pass. Fresh native browser
 acceptance is still required; the failed attempt is not relabeled.
 
 The announcement can appear after the dashboard URL settles. The company
@@ -1998,3 +1998,22 @@ build, provider credential or paid model call is used. Current cloud signoff
 shards pass; an isolated server Git-streaming fixture times out on one stack
 head and remains failed. Fresh full CI, review, paid connection and actual
 Daytona qualification remain open.
+
+### 2026-10-09 native notification channel preservation
+
+The `8a5af65` Mac browser attempt still loses the pre-steering message and
+remains failed. Its captured event contains the Rust-projected progress channel
+inside an update, but an unknown channel outside it. The native notification
+facade expects an item-start notification before assigning an assistant phase;
+Hermes can emit a delta without one. The facade now preserves the channel from
+validated canonical native deltas. Its process-local marker cannot be forged
+by provider JSON. Two regressions reproduce the original loss, then verify
+progress/final preservation and unchanged handling of unmarked provider input.
+All 19 driver event tests and four focused rehydration tests pass. The broader
+transport-suite attempt is interrupted and retained, not treated as a pass.
+
+Inspection also finds stale compiled modules in the server's vendored Runner.
+The TypeScript builds and vendor dependency check pass; six selected vendored
+modules, including the sidecar, match the freshly built Runner byte-for-byte.
+No local Rust or Docker build runs. Another native browser attempt is required
+against these verified artifacts before accepting rendered steering behavior.
