@@ -1,5 +1,5 @@
 /** Reviewed native closures. Setup cannot adopt a digest from downloaded files. */
 export const HERMES_CLOSURES: Readonly<Record<string, string>> = Object.freeze({
-  "darwin-arm64": "26371563768eb6578b80019f86d4a49cb55e36fd1593021cf9eac2cba945180c",
-  "linux-x64": "06a4e2d0005f0600125b8b3032cb200d7d5ff21280ecd6c3b80f29d29a3491a8",
+  "darwin-arm64": "fdf1369e1713fcf6dbaf43bb4a08e2cb819120bfef47d6047adfe6f7f47778a1",
+  "linux-x64": "62f0071c5be0b5d07088b0d1f9d280db64390f7aeab395a526059afaa3573135",
 });
