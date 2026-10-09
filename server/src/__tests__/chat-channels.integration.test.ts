@@ -4072,6 +4072,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         user: { id: installerId, team_id: "TAUTO", name: "installer", real_name: "Installing Person", is_bot: false, deleted: false },
         beforeIcon: null as null | (() => Promise<void>),
         beforeAuth: null as null | (() => Promise<void>),
+        beforeExchange: null as null | (() => Promise<void>),
         oauth: { ok: true, app_id: appId, token_type: "bot", access_token: token, team: { id: "TAUTO" }, bot_user_id: botId, authed_user: { id: installerId }, scope: scopes.join(",") },
       };
       const fallback = fakeSlackFetch(botId);
@@ -4095,6 +4096,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           return Response.json(state.failIcon ? { ok: false, error: "missing_scope", detail: `${configToken} ${signingSecret}` } : { ok: true });
         }
         if (url.endsWith("oauth.v2.access")) {
+          await state.beforeExchange?.();
           if (state.failExchange) throw new Error(`Timeout ${clientSecret} ${token}`);
           return Response.json(state.oauth);
         }
@@ -4250,6 +4252,16 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         await f.service.slackRegistration.complete(state, "code-canary", null, actor);
         expect((await f.service.get(f.endpoint.id)).setup.slackRegistration?.errorCode).toBe("slack_install_identity_mismatch");
         expect((await f.service.get(f.endpoint.id)).providerAccountId).toBeNull();
+      });
+      it("does not activate a bot when the manager grant is revoked during child OAuth", async () => {
+        const f = await managedFixture(); f.state.managedError = "app_approval_request_eligible";
+        const result = await f.provision();
+        const state = new URL(result.authorization!.authorizationUrl).searchParams.get("state")!;
+        f.state.beforeExchange = () => f.grants.revoke(f.grantId, f.companyId, actor);
+        await f.service.slackRegistration.complete(state, "code-canary", null, actor);
+        const saved = await f.service.get(f.endpoint.id);
+        expect(saved.providerAccountId).toBeNull();
+        expect(saved.setup.slackRegistration?.errorCode).toBe("slack_install_identity_mismatch");
       });
       it("serializes refreshes across endpoints and never replays an ambiguous refresh", async () => {
         const f = await managedFixture();
