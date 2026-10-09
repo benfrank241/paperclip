@@ -1,4 +1,5 @@
-import { startAgentLifecycle } from "./modules/agent-lifecycle/index.js";
+import { createLifecycleDriver } from "./services/agent-lifecycle-driver.js";
+import { startAgentLifecycle } from "./services/agent-lifecycle.js";
 import { idleAdmissionMiddleware, trackIdleRequestHandlers } from "./middleware/idle-admission.js";
 import { isIdleTaskDrainActive, trackIdleWork } from "./services/task-admission.js";
 import { customerSuccessRoutes } from "./routes/customer-success.js";
@@ -620,7 +621,7 @@ export async function createApp(
   const hostServicesDisposers = new Map<string, () => void>();
   const workerManager = opts.pluginWorkerManager ?? createPluginWorkerManager();
   let lifecyclePluginsReady = false;
-  const agentLifecycle = startAgentLifecycle(db, workerManager, () => lifecyclePluginsReady && !isWarmStandby() && !isIdleTaskDrainActive());
+  const agentLifecycle = startAgentLifecycle(db, createLifecycleDriver(db, workerManager), () => lifecyclePluginsReady && !isWarmStandby() && !isIdleTaskDrainActive());
   const connectionIntentHeartbeat = heartbeatService(db, {
     pluginWorkerManager: workerManager,
   });
