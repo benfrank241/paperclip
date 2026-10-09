@@ -38,7 +38,7 @@ export async function subscriptionCostReport(db: Db, companyId: string, actor: S
       exists(tx.select({ id: aiSubscriptionConnections.id }).from(aiSubscriptionConnections)
         .innerJoin(connectionGrants, and(eq(connectionGrants.id, aiSubscriptionConnections.grantId), eq(connectionGrants.companyId, companyId)))
         .where(and(eq(aiSubscriptionConnections.companyId, companyId), eq(aiSubscriptionConnections.subscriptionId, aiSubscriptions.id),
-          eq(connectionGrants.kind, "organization"), or(
+          eq(connectionGrants.kind, "organization"), eq(connectionGrants.status, "active"), or(
             notExists(tx.select({ id: connectionGrantMembers.id }).from(connectionGrantMembers).where(audience)),
             exists(tx.select({ id: connectionGrantMembers.id }).from(connectionGrantMembers).where(and(audience,
               eq(connectionGrantMembers.subjectType, "user"), eq(connectionGrantMembers.subjectId, actor.userId)))),

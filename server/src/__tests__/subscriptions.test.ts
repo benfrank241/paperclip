@@ -10,6 +10,7 @@ import { subscriptionCostReport } from "../services/subscription-report.js";
 import { refreshSubscriptionConnection } from "../services/subscription-refresh.js";
 import { subscriptionCredentialIdentity, probeSubscriptionIdentity } from "../services/subscription-identity.js";
 import { costService } from "../services/costs.js";
+import { toolAccessService } from "../services/tool-access.js";
 import * as liveEvents from "../services/live-events.js";
 
 let database: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>>;
@@ -324,6 +325,35 @@ describe("durable subscription reporting", () => {
     await db.delete(connectionGrants).where(eq(connectionGrants.id, input.grantId));
     expect((await subscriptionCostReport(db, c, { ...other, canManage: false })).accounts).toEqual([]);
     expect((await subscriptionCostReport(db, c, { ...owner, canManage: true })).accounts[0].id).toBe(id);
+  });
+  it.each([false, true])("revokes shared fee visibility through the public revoke service (restricted audience: %s)", async (restricted) => {
+    const c = await company(), input = await connection(c, token(), "openai", null), id = await verifiedConnection(input);
+    expect(await verifiedConnection(await connection(c))).toBe(id);
+    if (restricted) await db.insert(connectionGrantMembers).values({ companyId: c, grantId: input.grantId, subjectType: "user", subjectId: "bob" });
+    await event(c, id, "subscription_included");
+    const reader = { userId: "bob", canManage: false };
+    expect((await subscriptionCostReport(db, c, reader, { allTime: true })).accounts[0]).toMatchObject({ id, usage: { eventCount: 1 } });
+
+    await toolAccessService(db).revokeConnectionGrant(input.connectionId, input.grantId, { actorType: "user", actorId: "alice" });
+    const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, input.grantId));
+    expect(grant.status).toBe("revoked");
+    expect(await db.select().from(connectionGrantMembers).where(eq(connectionGrantMembers.grantId, input.grantId))).toHaveLength(restricted ? 1 : 0);
+    const hidden = await subscriptionCostReport(db, c, reader, { allTime: true });
+    expect(hidden.accounts).toEqual([]);
+    expect(hidden.monthlyTotals).toEqual([]);
+    expect(hidden.activeCount).toBe(0);
+    expect(hidden.subscription.eventCount).toBe(1);
+    expect(hidden.unattributedSubscription.eventCount).toBe(0);
+    expect(JSON.stringify(hidden)).not.toContain(id);
+    for (const editor of [owner, { userId: "carol", canManage: true }]) {
+      const report = await subscriptionCostReport(db, c, editor);
+      expect(report.accounts[0]).toMatchObject({ id, canEdit: true });
+      expect(report.monthlyTotals[0].amountCents).toBe("2000.0000000");
+    }
+
+    // A different active shared grant can independently authorize the reader.
+    expect(await verifiedConnection(await connection(c, token(), "openai", null))).toBe(id);
+    expect((await subscriptionCostReport(db, c, reader)).accounts[0].id).toBe(id);
   });
   it("keeps private linked-account usage out of details without calling it unattributed", async () => {
     const c = await company(), service = subscriptionService(db);
