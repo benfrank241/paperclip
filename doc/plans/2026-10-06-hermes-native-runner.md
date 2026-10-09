@@ -2080,3 +2080,26 @@ and Linux closure
 Only the small evidence files are extracted locally. The native controls and
 question-budget changes above follow that run and need their own fresh CI.
 This remains deterministic transport evidence, not paid or Daytona acceptance.
+
+### 2026-10-09 API-only delivery milestone and hosted cloud builds
+
+The user narrowed the immediate delivery milestone to Hermes with managed
+Anthropic and OpenAI API-key connections. Subscription login, Grok and Bedrock
+qualification are deferred. This changes the current qualification scope;
+earlier outcomes and the deferred connection requirements remain recorded.
+
+The remaining milestone covers real API-backed product behavior on Mac arm64
+and Linux/Daytona: streaming, tools and edits, image input, native questions,
+steering/queue/stop, strict restart recovery, persistent managed memory and
+learned skills, permissions, routine firing, token/cost attribution, and clean
+consumer installation. Successful scripted/native transport fixtures do not
+replace those live proofs. Existing unknown-cost reservations remain held.
+
+Read-only inspection of the AWS runner-group policy established that its Docker
+workflow allowlist names the Grok branch, with no Hermes branch entry. The
+Hermes image job was therefore not eligible for that group. The manual image
+workflow now defaults to standard GitHub-hosted Linux, preserving the explicit
+EC2 option, maintainer identity checks and immutable target checkout. Model
+credentials are excluded from both build paths. Cloud disk preparation is
+restricted to the disposable GitHub-hosted Linux job and unrelated preinstalled
+SDK directories. No local Docker or Rust build is required.

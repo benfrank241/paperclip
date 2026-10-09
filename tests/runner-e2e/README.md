@@ -1439,6 +1439,11 @@ credential boundaries and repetition requirements.
 
 ### Grok branch qualification on EC2
 
+Credential-free image and clean-install preparation can use the manual
+`Docker Runner check` workflow's default `execution_host=github-hosted`.
+Choose `execution_host=ec2` only for an allowlisted workflow ref. Both paths
+build remotely and retain the immutable target revision and image evidence.
+
 The trusted default-branch workflow can run the explicit `grok-qualification`
 suite from a selected target branch. Store `XAI_API_KEY` only in the protected
 `runner-e2e-paid` environment. The paid step delivers it only to a profile whose
