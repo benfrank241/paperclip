@@ -13,7 +13,10 @@ import {
 
 const cleanups: Array<() => Promise<void> | void> = [];
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+// Each case starts a real PostgreSQL instance. Keep the existing integration
+// deadline at suite scope; the independent file-writer tests retain the default.
+const describeEmbeddedPostgres = (name: string, factory: () => void) =>
+  (embeddedPostgresSupport.supported ? describe : describe.skip)(name, { timeout: 30_000 }, factory);
 
 function createTempDir(prefix: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -74,9 +77,7 @@ describe("createBufferedTextFileWriter", () => {
   });
 });
 
-// Each case starts a real PostgreSQL instance. Use the same bounded deadline
-// as the existing backup integration cases, including newly added cases.
-describeEmbeddedPostgres("runDatabaseBackup", { timeout: 30_000 }, () => {
+describeEmbeddedPostgres("runDatabaseBackup", () => {
   it("preserves identity generation, sequence options and progress in JavaScript backups", async () => {
     const source = await createTempDatabase();
     const target = await createSiblingDatabase(source, "identity_restore_target");
