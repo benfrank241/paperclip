@@ -1349,6 +1349,8 @@ test.describe("Exact failed chat run retry", () => {
       await expect(page.getByText(foreignTitle, { exact: true }).first()).toBeVisible();
       await expect.poll(() => page.evaluate(() => localStorage.getItem("paperclip.selectedCompanyId")))
         .toBe(other.companyId);
+      const dismissAnnouncement = page.getByRole("button", { name: "Dismiss announcement", exact: true });
+      if (await dismissAnnouncement.isVisible()) await dismissAnnouncement.click();
       await page.getByRole("button", { name: `Open ${foreignCompany.name} organization switcher`, exact: true }).click();
       const menuItems = await page.getByRole("menuitem").allTextContents();
       const scopedOption = page.getByRole("menuitem").filter({ hasText: scopedCompany.name });
@@ -1362,6 +1364,7 @@ test.describe("Exact failed chat run retry", () => {
         afterSwitchSelectedCompany: await page.evaluate(() => localStorage.getItem("paperclip.selectedCompanyId")),
       }, null, 2));
       await expect(page).toHaveURL(new RegExp(`/${seed.prefix}/dashboard$`));
+      if (await dismissAnnouncement.isVisible()) await dismissAnnouncement.click();
       await page.getByRole("link", { name: "Agents", exact: true }).first().click();
       await page.getByRole("link", { name: "Maya", exact: true }).first().click();
       await expect(page).toHaveURL(new RegExp(`/${seed.prefix}/agents/maya(?:/overview)?$`));
@@ -1379,6 +1382,20 @@ test.describe("Exact failed chat run retry", () => {
       await expect.poll(() => page.evaluate(() => localStorage.getItem("paperclip.selectedCompanyId")))
         .toBe(seed.companyId);
       await page.screenshot({ path: testInfo.outputPath("cross-company-canonical-agent.png") });
+      // A manual selection must not prevent a later history navigation from
+      // following the authorized agent's company in the sidebar as well.
+      await page.goBack();
+      await expect(page).toHaveURL(new RegExp(`/${seed.prefix}/agents/all$`));
+      await page.goBack();
+      await expect(page).toHaveURL(new RegExp(`/${seed.prefix}/dashboard$`));
+      await page.goBack();
+      await expect(page).toHaveURL(new RegExp(`/${other.prefix}/agents/maya/overview$`));
+      await expect(page.getByText(foreignTitle, { exact: true }).first()).toBeVisible();
+      await expect.poll(() => page.evaluate(() => localStorage.getItem("paperclip.selectedCompanyId")))
+        .toBe(other.companyId);
+      await expect(page.getByRole("button", { name: `Open ${foreignCompany.name} organization switcher`, exact: true }))
+        .toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath("cross-company-history-selection.png") });
     } finally {
       release();
     }
