@@ -39,8 +39,11 @@ const nativeResponse = {
 const cases = [
   ...[null, 'ask_user_questions', 'request_confirmation', 'request_checkbox_confirmation'].map(interactionKind => ({ interactionKind, nativeQuestionAction: null })),
   ...['submit', 'cancel', 'stop'].map(nativeQuestionAction => ({ interactionKind: null, nativeQuestionAction })),
+  { interactionKind: null, nativeQuestionAction: null, nativeSteering: true },
 ];
-for (const { interactionKind, nativeQuestionAction } of cases) test(nativeQuestionAction
+for (const { interactionKind, nativeQuestionAction, nativeSteering } of cases) test(nativeSteering
+  ? 'pinned Hermes accepts active provider-turn steering across the production Rust PRP transport'
+  : nativeQuestionAction
   ? `pinned Hermes native question batch crosses Rust PRP with ${nativeQuestionAction} and rejects a second answer`
   : interactionKind
   ? `pinned Hermes retains prompt usage before committed ${interactionKind} triggers immediate Rust-sidecar shutdown`
@@ -68,6 +71,22 @@ for (const { interactionKind, nativeQuestionAction } of cases) test(nativeQuesti
     }
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     const send = (delta, finish_reason = null) => res.write(`data: ${JSON.stringify({ id: 'native-prp', object: 'chat.completion.chunk', choices: [{ index: 0, delta, finish_reason }] })}\n\n`);
+    if (nativeSteering && requests.length === 1) {
+      send({ role: 'assistant', reasoning_content: 'Checking the native runner path.' });
+      send({ content: 'NATIVE_RUNNER_STEER_READY' });
+      const deadline = Date.now() + 30_000;
+      while (!res.destroyed && Date.now() < deadline) {
+        res.write(': active native stream\n\n');
+        await new Promise(resolve => setTimeout(resolve, 30));
+      }
+      assert.ok(res.destroyed, 'Native steering did not interrupt the current model request');
+      return;
+    }
+    if (nativeSteering) {
+      const latestUser = body.messages.findLast(message => message.role === 'user');
+      assert.ok(JSON.stringify(latestUser?.content).includes('NATIVE_RUNNER_STEER_ACCEPTED'),
+        'Steering must reach the original native loop as a user correction');
+    }
     const toolResults = body.messages.filter(message => message.role === 'tool');
     const askNative = nativeQuestionAction && toolResults.length === 0;
     if (askNative || toolResults.length === (nativeQuestionAction ? 1 : 0)) {
@@ -146,8 +165,19 @@ for (const { interactionKind, nativeQuestionAction } of cases) test(nativeQuesti
   let cancellationOutcome;
   let stoppedQuestionRequest;
   let questionResolutions = 0;
+  let steeringTurnId;
+  let steeringCount = 0;
   for await (const event of session.events()) {
     events.push(event);
+    if (nativeSteering && event.eventType === 'item.delta'
+      && event.payload.kind === 'agentMessage' && event.payload.text.includes('NATIVE_RUNNER_STEER_READY')) {
+      assert.equal(steeringCount++, 0, 'The active stream must not receive duplicate steering');
+      steeringTurnId = event.turnId;
+      assert.notEqual(steeringTurnId, 'hermes-prp-turn', 'Fixture must distinguish provider and durable PRP turn identities');
+      assert.equal((await session.capabilities()).steering, true);
+      await session.steer({ turnId: steeringTurnId, message: { role: 'user', text: 'NATIVE_RUNNER_STEER_ACCEPTED' },
+        correlationId: 'native-steer-fixture' });
+    }
     if (nativeQuestionAction && event.eventType === 'runtime_request.created') {
       const request = event.payload.request;
       assert.equal(request.origin.method, '_hermes/ask_questions');
@@ -275,4 +305,17 @@ for (const { interactionKind, nativeQuestionAction } of cases) test(nativeQuesti
   assert.equal(snapshot.semanticResult?.reportedWorkDisposition, 'done');
   assert.equal(snapshot.terminal?.runTerminalState, 'succeeded');
   assert.equal(bundle.evidence().acpxAgent, 'hermes');
+  if (nativeSteering) {
+    assert.equal(steeringCount, 1);
+    assert.equal(requests.length, 3, 'A redirected request and normal completion must remain in one native turn');
+    assert.equal(events.filter(event => event.eventType === 'turn.started').length, 1);
+    const acknowledgements = events.filter(event => event.eventType === 'item.completed'
+      && event.payload.kind === 'steering_acknowledgement');
+    assert.equal(acknowledgements.length, 1, 'Steering must produce one canonical acknowledgement');
+    assert.equal(acknowledgements[0].turnId, steeringTurnId);
+    assert.equal(acknowledgements[0].payload.status, 'acknowledged');
+    await assert.rejects(session.steer({ turnId: steeringTurnId,
+      message: { role: 'user', text: 'STALE_NATIVE_STEER' }, correlationId: 'stale-native-steer' }), /terminal|active turn/i);
+  }
+
 });

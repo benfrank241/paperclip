@@ -1673,3 +1673,27 @@ Fresh cloud materialization, current-head native checks and PR verification are
 required. No local Docker or Rust build is used. Shared configuration adoption,
 routine completion and transcript UI patches remain unapplied outside the fixed
 PR file set. Hermes remains pending the full release qualification matrix.
+
+### 2026-10-08 active steering through the production transport
+
+The actual browser journey negotiated Hermes steering and exposed the Steer
+action, but the production transport rejected its current target as stale.
+ACPX validates controls against the active provider turn; the transport had
+sent the durable Paperclip turn that scopes PRP and semantic events. It now
+sends the active provider identity for ACPX controls. Other provider mappings
+retain their existing contract.
+
+The focused regression crosses TypeScript, Rust PRP, the production sidecar,
+ACPX and pinned Hermes with distinct durable and provider turn IDs. It first
+reproduced the stale-turn rejection. After that correction it exposed duplicate
+steering acknowledgements: item rehydration wrapped the flat Runner receipt,
+so the driver could not recognize its transport echo. Preserving that flat
+receipt retains durable evidence and emits one bound transcript acknowledgement.
+
+The regression now passes with the verified cloud-built Mac Runner. It verifies
+that the native agent receives the correction, the active request is interrupted,
+exactly one provider turn and acknowledgement remain, semantic completion
+succeeds, and a control after settlement is refused. This is credential-free
+native transport evidence. The earlier browser and regression failures remain
+failed; a fresh browser acceptance run and cloud checks remain required. No
+local Docker or Rust build is used.
