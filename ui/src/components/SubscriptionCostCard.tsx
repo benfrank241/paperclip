@@ -81,7 +81,8 @@ export function SubscriptionCostCard({ companyId, report, error, onChanged }: {
         {report ? <>
           {estimatedCount > 0 && <div><Badge variant="outline" className="font-normal text-muted-foreground">{estimatedCount < report.activeCount - report.unknownPriceCount ? "Partially estimated" : "Estimated"}</Badge></div>}
           {report.unknownPriceCount > 0 && !!known && <div>Known monthly subtotal</div>}
-          <div>{report.accounts.length === 0 ? "No subscriptions identified" : <>{report.activeCount} active {report.activeCount === 1 ? "subscription" : "subscriptions"}{report.unknownPriceCount > 0 && ` · ${report.unknownPriceCount} ${report.unknownPriceCount === 1 ? "price" : "prices"} unknown`}</>}</div>
+          <div>{report.accounts.length === 0 ? "No visible subscriptions" : <>{report.activeCount} active {report.activeCount === 1 ? "subscription" : "subscriptions"}{report.unknownPriceCount > 0 && ` · ${report.unknownPriceCount} ${report.unknownPriceCount === 1 ? "price" : "prices"} unknown`}</>}</div>
+          {report.accounts.length > 0 && <div>Monthly fees for accounts visible to you</div>}
           {report.unidentifiedAccountCount > 0 && <div>{report.unidentifiedAccountCount} unconfirmed {report.unidentifiedAccountCount === 1 ? "account identity" : "account identities"}</div>}
           <SubscriptionTokenUsage usage={report.subscription} />
         </> : error ? <div>Subscription data is unavailable.</div> : <div>Loading subscriptions…</div>}
@@ -91,9 +92,9 @@ export function SubscriptionCostCard({ companyId, report, error, onChanged }: {
     </Card>
     <Dialog open={open} onOpenChange={value => { setOpen(value); if (!value) setEditing(null); }}>
       <DialogContent className="max-h-(--sz-80vh) overflow-y-auto sm:max-w-3xl">
-        <DialogHeader><DialogTitle>{editing ? "Subscription price" : "Subscriptions"}</DialogTitle><DialogDescription>Current monthly costs for accounts connected to this organization. Token usage covers Paperclip work in the selected period.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>{editing ? "Subscription price" : "Subscriptions"}</DialogTitle><DialogDescription>Current monthly costs for accounts visible to you. Token totals cover company work in the selected period.</DialogDescription></DialogHeader>
         {editing ? <SubscriptionEditor key={editing.id} companyId={companyId} account={editing} accounts={report?.accounts ?? []} onDone={closeEditor} /> : <div className="space-y-4">
-          {report?.accounts.length === 0 && <p className="text-sm text-muted-foreground">No subscriptions have been identified yet. Connect an AI account or run an agent with a connected subscription.</p>}
+          {report?.accounts.length === 0 && <p className="text-sm text-muted-foreground">No subscriptions are visible to you yet. Connect an AI account or run an agent with a connected subscription.</p>}
           {report?.accounts.map(account => <div key={account.id} className="space-y-2 border-b border-border pb-4 last:border-0">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div><div className="font-medium">{account.name}</div><div className="text-xs text-muted-foreground">{account.shared ? "Shared" : account.ownerName ?? (account.ownerUserId ? "Account owner" : "Personal accounts")} · {providerDisplayName(account.provider)} · {account.price.plan}</div></div>

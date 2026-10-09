@@ -96,7 +96,8 @@ export interface SubscriptionAccountReport {
 
 export interface SubscriptionCostReport {
   canRefresh: boolean;
-  /** Current monthly commitment; independent of the usage date filter. */
+  /** Current monthly commitment for accounts visible to the caller;
+   * independent of the usage date filter. Aggregate run usage is company-wide. */
   asOf: string;
   accounts: SubscriptionAccountReport[];
   monthlyTotals: { currency: string; amountCents: string; estimatedCount: number }[];

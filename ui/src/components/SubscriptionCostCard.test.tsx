@@ -64,7 +64,7 @@ describe("subscription costs", () => {
     const report = fixture(); report.accounts = []; report.activeCount = 0; report.monthlyTotals = [];
     report.unattributedSubscription = { ...report.subscription, eventCount: 1 };
     await render(report);
-    expect(container.textContent).toContain("No subscriptions identified");
+    expect(container.textContent).toContain("No visible subscriptions");
     expect(container.textContent).not.toContain("$0.00");
     await click("View details");
     expect(document.body.textContent).toContain("Some subscription usage has no recorded account");

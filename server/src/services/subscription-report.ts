@@ -1,5 +1,5 @@
-import { and, eq, gte, isNull, lte, sql } from "drizzle-orm";
-import { aiSubscriptions, aiSubscriptionPrices, agents, authUsers, companyMemberships, costEvents, type Db } from "@paperclipai/db";
+import { and, eq, exists, gte, isNull, lte, notExists, or, sql } from "drizzle-orm";
+import { aiSubscriptions, aiSubscriptionPrices, aiSubscriptionConnections, connectionGrants, connectionGrantMembers, agents, authUsers, companyMemberships, costEvents, type Db } from "@paperclipai/db";
 import { addCents, monthlySubscriptionCents, type SubscriptionCostReport, type SubscriptionPrice, type SubscriptionUsage } from "@paperclipai/shared";
 import { withAccountingReadSnapshot } from "./accounting-transaction.js";
 import { ordinaryInputTokens } from "./costs.js";
@@ -28,12 +28,32 @@ export async function subscriptionCostReport(db: Db, companyId: string, actor: S
     const conditions = [eq(costEvents.companyId, companyId)];
     if (period?.from) conditions.push(gte(costEvents.occurredAt, period.from));
     if (period?.to) conditions.push(lte(costEvents.occurredAt, period.to));
-    const [accounts, prices, owners, groups] = await Promise.all([
-      tx.select().from(aiSubscriptions).where(eq(aiSubscriptions.companyId, companyId)),
+    // Company cost-read permission covers aggregate run usage, not another
+    // member's private subscription fee. Billing editors retain visibility
+    // after disconnection; other readers need an authorized shared audience.
+    const audience = and(eq(connectionGrantMembers.companyId, companyId), eq(connectionGrantMembers.grantId, connectionGrants.id));
+    const visible = or(
+      sql`${actor.userId} = any(${aiSubscriptions.ownerUserIds})`,
+      actor.canManage ? eq(aiSubscriptions.shared, true) : undefined,
+      exists(tx.select({ id: aiSubscriptionConnections.id }).from(aiSubscriptionConnections)
+        .innerJoin(connectionGrants, and(eq(connectionGrants.id, aiSubscriptionConnections.grantId), eq(connectionGrants.companyId, companyId)))
+        .where(and(eq(aiSubscriptionConnections.companyId, companyId), eq(aiSubscriptionConnections.subscriptionId, aiSubscriptions.id),
+          eq(connectionGrants.kind, "organization"), or(
+            notExists(tx.select({ id: connectionGrantMembers.id }).from(connectionGrantMembers).where(audience)),
+            exists(tx.select({ id: connectionGrantMembers.id }).from(connectionGrantMembers).where(and(audience,
+              eq(connectionGrantMembers.subjectType, "user"), eq(connectionGrantMembers.subjectId, actor.userId)))),
+          )))),
+    );
+    const visibleCurrent = and(eq(aiSubscriptions.companyId, companyId), isNull(aiSubscriptions.mergedIntoId), visible);
+    const [accounts, links, prices, owners, groups] = await Promise.all([
+      tx.select().from(aiSubscriptions).where(visibleCurrent),
+      // Historical aliases are needed to distinguish hidden accounts from
+      // truly unattributed runs. Do not load their private metadata or prices.
+      tx.select({ id: aiSubscriptions.id, mergedIntoId: aiSubscriptions.mergedIntoId }).from(aiSubscriptions).where(eq(aiSubscriptions.companyId, companyId)),
       tx.select({ price: aiSubscriptionPrices }).from(aiSubscriptions).innerJoin(aiSubscriptionPrices, and(
         eq(aiSubscriptionPrices.companyId, aiSubscriptions.companyId), eq(aiSubscriptionPrices.subscriptionId, aiSubscriptions.id),
         eq(aiSubscriptionPrices.revision, aiSubscriptions.revision),
-      )).where(and(eq(aiSubscriptions.companyId, companyId), isNull(aiSubscriptions.mergedIntoId))),
+      )).where(visibleCurrent),
       tx.select({ id: authUsers.id, name: authUsers.name }).from(authUsers).innerJoin(companyMemberships, and(
         eq(companyMemberships.principalId, authUsers.id), eq(companyMemberships.companyId, companyId), eq(companyMemberships.principalType, "user"))),
       tx.select({ subscriptionId: costEvents.subscriptionId, billingType: costEvents.billingType,
@@ -53,7 +73,7 @@ export async function subscriptionCostReport(db: Db, companyId: string, actor: S
       api: emptySubscriptionUsage(), subscription: emptySubscriptionUsage(), unknown: emptySubscriptionUsage(), unattributedSubscription: emptySubscriptionUsage() };
     const currentPrices = new Map(prices.map(({ price }) => [price.subscriptionId, priceDto(price)]));
     const ownerNames = new Map(owners.map(owner => [owner.id, owner.name]));
-    for (const account of accounts.filter(row => !row.mergedIntoId)) {
+    for (const account of accounts) {
       const price = currentPrices.get(account.id);
       if (!price) throw new Error("Subscription price history is incomplete");
       const ownerUserId = !account.shared && account.ownerUserIds.length === 1 ? account.ownerUserIds[0] : null;
@@ -74,13 +94,15 @@ export async function subscriptionCostReport(db: Db, companyId: string, actor: S
       if (price.source !== "user") total.estimatedCount++;
     }
     const byId = new Map(report.accounts.map(account => [account.id, account]));
-    const aliases = new Map(accounts.map(account => [account.id, account.mergedIntoId]));
-    const canonicalIds = new Map(accounts.map(account => [account.id, canonicalSubscriptionId(account.id, aliases)]));
+    const aliases = new Map(links.map(account => [account.id, account.mergedIntoId]));
+    const canonicalIds = new Map(links.map(account => [account.id, canonicalSubscriptionId(account.id, aliases)]));
     for (const group of groups) {
       const isSubscription = group.billingType === "subscription_included" || group.billingType === "subscription_overage";
       addUsage(group.billingType === "metered_api" ? report.api : isSubscription ? report.subscription : report.unknown, group);
       if (!isSubscription) continue;
-      const account = group.subscriptionId ? byId.get(canonicalIds.get(group.subscriptionId) ?? "") : undefined;
+      const canonicalId = group.subscriptionId ? canonicalIds.get(group.subscriptionId) : undefined;
+      const account = canonicalId ? byId.get(canonicalId) : undefined;
+      if (canonicalId && !account) continue; // Known private account; not missing attribution.
       if (!account) { addUsage(report.unattributedSubscription, group); continue; }
       addUsage(account.usage, group);
       if (group.agentId && !account.agents.some(agent => agent.id === group.agentId)) account.agents.push({ id: group.agentId, name: group.agentName ?? "Agent" });

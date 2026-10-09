@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { and, eq, sql } from "drizzle-orm";
-import { createDb, companies, agents, heartbeatRuns, costEvents, activityLog, aiSubscriptions, aiSubscriptionPrices, aiSubscriptionConnections, toolApplications, toolConnections, connectionGrants } from "@paperclipai/db";
+import { createDb, companies, agents, heartbeatRuns, costEvents, activityLog, aiSubscriptions, aiSubscriptionPrices, aiSubscriptionConnections, toolApplications, toolConnections, connectionGrants, connectionGrantMembers } from "@paperclipai/db";
 import { startEmbeddedPostgresTestDatabase } from "@paperclipai/db/test-embedded-postgres";
 import { monthlySubscriptionCents, subscriptionPlan, subscriptionPriceSchema } from "@paperclipai/shared";
 import { subscriptionService, type SubscriptionConnection } from "../services/subscriptions.js";
@@ -131,7 +131,7 @@ describe("durable subscription reporting", () => {
     await refreshSubscriptionConnection(db, attacker, provisional, status === 200 ? fixtureRequest(usage()) : async () => new Response(null, { status }));
     await expect(price(c, victim, "0", { status: "excluded" }, other)).rejects.toMatchObject({ status: 403 });
     const report = await subscriptionCostReport(db, c, other);
-    expect(report.accounts.find(row => row.id === victim)).toMatchObject({ canEdit: false, shared: false, price: { amountCents: "2000.0000000", status: "active" } });
+    expect(report.accounts.find(row => row.id === victim)).toBeUndefined();
     const [account] = await db.select().from(aiSubscriptions).where(eq(aiSubscriptions.id, victim));
     expect(account.ownerUserIds).toEqual(["alice"]);
   });
@@ -169,8 +169,9 @@ describe("durable subscription reporting", () => {
     expect(await verifiedConnection(await connection(c, token("workspace", "bob"), "openai", "bob"))).not.toBe(first);
     expect(await verifiedConnection(await connection(await company()))).not.toBe(first);
     const report = await subscriptionCostReport(db, c, owner, { allTime: true });
-    expect(report.activeCount).toBe(2);
-    expect(report.monthlyTotals).toEqual([{ currency: "USD", amountCents: "4000.0000000", estimatedCount: 2 }]);
+    expect(report.activeCount).toBe(1);
+    expect(report.monthlyTotals).toEqual([{ currency: "USD", amountCents: "2000.0000000", estimatedCount: 1 }]);
+    expect((await subscriptionCostReport(db, c, other)).activeCount).toBe(1);
     expect(report.accounts.find(row => row.id === second)?.price.revision).toBe(0);
   });
   it("does not multiply automatic fees when a plan has no stable account identity", async () => {
@@ -296,7 +297,47 @@ describe("durable subscription reporting", () => {
     await price(c, id, "1800", {}, { userId: "carol", canManage: false });
     await price(c, id, "1900", {}, owner);
     await expect(price(c, id, "2000", {}, other)).rejects.toMatchObject({ status: 403 });
-    expect((await subscriptionCostReport(db, c, other)).accounts[0]).toMatchObject({ canEdit: false, shared: false, ownerUserId: null });
+    expect((await subscriptionCostReport(db, c, other)).accounts).toEqual([]);
+    expect((await subscriptionCostReport(db, c, owner)).accounts[0]).toMatchObject({ canEdit: true, shared: false, ownerUserId: null });
+  });
+  it.each([false, true])("keeps another member's personal fees private from cost readers (manager: %s)", async (canManage) => {
+    const c = await company(), input = await connection(c), id = await verifiedConnection(input);
+    await price(c, id, "1234", { plan: "Private negotiated plan" });
+    await event(c, id, "subscription_included");
+    const hidden = await subscriptionCostReport(db, c, { userId: "bob", canManage }, { allTime: true });
+    expect(hidden.accounts).toEqual([]);
+    expect(hidden.monthlyTotals).toEqual([]);
+    expect(hidden.activeCount).toBe(0);
+    expect(hidden.unknownPriceCount).toBe(0);
+    expect(hidden.subscription.eventCount).toBe(1);
+    expect(hidden.unattributedSubscription.eventCount).toBe(0);
+    expect(JSON.stringify(hidden)).not.toMatch(/Private negotiated plan|alice|1234/);
+    const visible = await subscriptionCostReport(db, c, { ...owner, readOnly: true });
+    expect(visible.accounts[0]).toMatchObject({ id, canEdit: false, price: { amountCents: "1234.0000000" } });
+  });
+  it("respects shared connection audiences while retaining managers' access after disconnection", async () => {
+    const c = await company(), input = await connection(c, token(), "openai", null), id = await verifiedConnection(input);
+    await db.insert(connectionGrantMembers).values({ companyId: c, grantId: input.grantId, subjectType: "user", subjectId: "bob" });
+    expect((await subscriptionCostReport(db, c, owner)).accounts).toEqual([]);
+    expect((await subscriptionCostReport(db, c, { ...other, canManage: false })).accounts[0]).toMatchObject({ id, shared: true, canEdit: false });
+    expect((await subscriptionCostReport(db, c, { ...owner, canManage: true })).accounts[0]).toMatchObject({ id, canEdit: true });
+    await db.delete(connectionGrants).where(eq(connectionGrants.id, input.grantId));
+    expect((await subscriptionCostReport(db, c, { ...other, canManage: false })).accounts).toEqual([]);
+    expect((await subscriptionCostReport(db, c, { ...owner, canManage: true })).accounts[0].id).toBe(id);
+  });
+  it("keeps private linked-account usage out of details without calling it unattributed", async () => {
+    const c = await company(), service = subscriptionService(db);
+    const a = await service.register(await connection(c, "private-a", "anthropic"));
+    const b = await service.register(await connection(c, "private-b", "anthropic"));
+    await event(c, a, "subscription_included"); await event(c, b, "subscription_included");
+    await event(c, null, "subscription_included");
+    await service.merge(c, a, b, 0, 0, owner);
+    const hidden = await subscriptionCostReport(db, c, other, { allTime: true });
+    expect(hidden.accounts).toEqual([]);
+    expect(hidden.subscription.eventCount).toBe(3);
+    expect(hidden.unattributedSubscription.eventCount).toBe(1);
+    expect(JSON.stringify(hidden)).not.toContain(a);
+    expect(JSON.stringify(hidden)).not.toContain(b);
   });
   it("reports only current prices while preserving accumulated revisions for auditing", async () => {
     const c = await company(), service = subscriptionService(db);

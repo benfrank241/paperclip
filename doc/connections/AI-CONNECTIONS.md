@@ -773,6 +773,14 @@ the caller can edit and should only join the same subscription or paid seat.
 Provider observations never overwrite a user-supplied price. Conflicting manual
 prices prevent automatic linking rather than silently choosing one.
 
+Monthly totals and account details include only accounts the viewer may see:
+personal billing owners, company managers of shared fees, and the authorized
+audience of shared connections. Cost-read permission alone does not reveal
+another member's personal plan, price, owner, or account-linked activity. Billing
+editors retain visibility after disconnection so they can end tracking. Aggregate
+API and subscription run-token totals remain company-wide, as in existing cost
+reports; hidden private accounts are not mislabeled as missing attribution.
+
 Provider lookups run in the background, with a six-hour attempt cache shared by
 server replicas, at most four active provider lookups per process, a 15-second
 request deadline, and a 256 KiB response limit. Failed checks preserve the last
