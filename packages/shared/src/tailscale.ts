@@ -29,6 +29,7 @@ export const TAILSCALE_HEALTH_CODES = [
   "tailscale_unreachable",
   "tailscale_test_key_cleanup_failed",
   "tailscale_request_failed",
+  "tailscale_connection_changed",
 ] as const;
 export type TailscaleHealthCode = (typeof TAILSCALE_HEALTH_CODES)[number];
 
@@ -41,6 +42,11 @@ export interface TailscaleConnectionHealth {
   tags: string[];
   deviceCount: number;
   checkedAt: string;
+  /**
+   * Hash of the settings and vault secret versions the check used. The server
+   * reuses a recent summary only while this still matches the connection.
+   */
+  probeFingerprint?: string;
 }
 
 export function tailscaleScopeCovers(scopes: readonly string[], accepted: readonly string[]): boolean {

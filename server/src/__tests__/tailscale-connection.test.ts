@@ -18,6 +18,8 @@ import {
 } from "./helpers/embedded-postgres.js";
 
 const support = await getEmbeddedPostgresTestSupport();
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 const actor = { actorType: "user" as const, actorId: "tailscale-reviewer" };
 const CLIENT_ID = "kFIXTURECNTRL";
 const CLIENT_SECRET = "tskey-client-fixture-secret-value";
@@ -49,7 +51,13 @@ const SECRETS = [CLIENT_SECRET, TOKEN, TEST_KEY_SECRET, PROVIDER_BODY];
       membershipRole: "admin",
       status: "active",
     });
-    const behavior = { tokenStatus: 0, createStatus: 0, scope: "auth_keys devices:core" };
+    const behavior: {
+      tokenStatus: number;
+      createStatus: number;
+      scope: string;
+      /** When set, the device list waits on this promise before it answers. */
+      devicesGate: Promise<void> | null;
+    } = { tokenStatus: 0, createStatus: 0, scope: "auth_keys devices:core", devicesGate: null };
     const calls: { method: string; path: string; body: string | undefined }[] = [];
     const request = vi.fn(async (url: string, init: RequestInit) => {
       const parsed = new URL(url);
@@ -67,6 +75,7 @@ const SECRETS = [CLIENT_SECRET, TOKEN, TEST_KEY_SECRET, PROVIDER_BODY];
         return Response.json({ message: PROVIDER_BODY }, { status: 401 });
       }
       if (/^\/tailnet\/[^/]+\/devices\?fields=all$/.test(path)) {
+        if (behavior.devicesGate) await behavior.devicesGate;
         return Response.json({ devices: [{ nodeId: "nFIXTURE1", name: "devbox.fixture.example.ts.net", addresses: ["100.64.0.7"] }] });
       }
       if (/^\/tailnet\/[^/]+\/keys$/.test(path) && init.method === "POST") {
@@ -87,6 +96,36 @@ const SECRETS = [CLIENT_SECRET, TOKEN, TEST_KEY_SECRET, PROVIDER_BODY];
       remoteHttpEndpointLookup: async () => [{ address: "8.8.8.8", family: 4 }],
     });
     return { company, access, behavior, calls, request };
+  }
+
+  const PROBE = [
+    "POST /oauth/token",
+    "GET /tailnet/-/devices?fields=all",
+    "POST /tailnet/-/keys",
+    "DELETE /tailnet/-/keys/kTESTKEY1",
+  ];
+
+  async function connect(fx: Awaited<ReturnType<typeof fixture>>, configValues?: Record<string, string>) {
+    const connected = await fx.access.connectGalleryApp(
+      fx.company.id,
+      {
+        galleryKey: "tailscale",
+        connectionMethodKey: "oauth-client",
+        ...(configValues ? { configValues } : {}),
+        credentialValues: {
+          "credentials.oauthClientId": CLIENT_ID,
+          "credentials.oauthClientSecret": CLIENT_SECRET,
+        },
+      },
+      actor,
+    );
+    fx.calls.length = 0;
+    return connected;
+  }
+
+  async function row(connectionId: string) {
+    const [found] = await db.select().from(toolConnections).where(eq(toolConnections.id, connectionId));
+    return found;
   }
 
   function expectRedacted(value: unknown) {
@@ -223,6 +262,97 @@ const SECRETS = [CLIENT_SECRET, TOKEN, TEST_KEY_SECRET, PROVIDER_BODY];
     expect(row.healthStatus).toBe("error");
     expect(row.healthMessage).toContain("rejected the OAuth client");
     expectRedacted(row);
+  });
+
+  it("reuses the setup probe for an immediate refresh, but probes again once a check has failed", async () => {
+    const fx = await fixture();
+    const connected = await connect(fx);
+    const stored = await row(connected.connectionId);
+    expect(stored.healthStatus).toBe("ok");
+    expect(asRecord(stored.config.tailscale).probeFingerprint).toMatch(/^[0-9a-f]{32}$/);
+
+    // Unchanged connection whose latest check succeeded: no second test key.
+    const reused = await fx.access.refreshCatalog(connected.connectionId, actor);
+    expect(fx.calls).toEqual([]);
+    expect(reused.connection.healthStatus).toBe("ok");
+    expect(reused.connection.healthMessage).toContain("Tailscale OAuth client is connected");
+
+    // A failed check must not be hidden by a refresh inside the reuse window.
+    fx.behavior.tokenStatus = 401;
+    await expect(fx.access.checkHealth(connected.connectionId, actor)).rejects.toMatchObject({ status: 422, details: { code: "tailscale_client_invalid" } });
+    expect((await row(connected.connectionId)).healthStatus).toBe("error");
+    fx.calls.length = 0;
+    await expect(fx.access.refreshCatalog(connected.connectionId, actor)).rejects.toMatchObject({ status: 422, details: { code: "tailscale_client_invalid" } });
+    expect(fx.calls.map((call) => `${call.method} ${call.path}`)).toEqual(["POST /oauth/token"]);
+    const failed = await row(connected.connectionId);
+    expect(failed.healthStatus).toBe("error");
+    expect(failed.healthMessage).toContain("rejected the OAuth client");
+
+    // Once the provider accepts the client again, the refresh revalidates in full.
+    fx.behavior.tokenStatus = 0;
+    fx.calls.length = 0;
+    const recovered = await fx.access.refreshCatalog(connected.connectionId, actor);
+    expect(fx.calls.map((call) => `${call.method} ${call.path}`)).toEqual(PROBE);
+    expect(recovered.connection.healthStatus).toBe("ok");
+  });
+
+  it("probes again on refresh when the tailnet or agent tag changed since the last check", async () => {
+    const fx = await fixture();
+    const connected = await connect(fx);
+    const stored = await row(connected.connectionId);
+    await fx.access.updateConnection(connected.connectionId, {
+      config: { ...stored.config, methodConfig: { tailnet: "example.com", agentTag: "tag:paperclip-lab" } },
+    });
+    expect((await row(connected.connectionId)).healthStatus).toBe("ok");
+    const refreshed = await fx.access.refreshCatalog(connected.connectionId, actor);
+    expect(fx.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      "POST /oauth/token",
+      "GET /tailnet/example.com/devices?fields=all",
+      "POST /tailnet/example.com/keys",
+      "DELETE /tailnet/example.com/keys/kTESTKEY1",
+    ]);
+    expect(JSON.parse(fx.calls[2]!.body!).capabilities.devices.create.tags).toEqual(["tag:paperclip-lab"]);
+    expect(refreshed.connection.healthMessage).toContain("tailnet example.com");
+    expect(refreshed.connection.healthMessage).toContain("Tags: tag:paperclip-lab");
+    expect((await row(connected.connectionId)).config.tailscale).toMatchObject({ tailnet: "example.com", tags: ["tag:paperclip-lab"] });
+  });
+
+  it("keeps a settings save that lands during a probe and discards the stale evidence", async () => {
+    const fx = await fixture();
+    const connected = await connect(fx);
+    const before = await row(connected.connectionId);
+    const previousSummary = before.config.tailscale;
+
+    let release!: () => void;
+    fx.behavior.devicesGate = new Promise<void>((resolve) => { release = resolve; });
+    const pendingCheck = fx.access.checkHealth(connected.connectionId, actor).then(
+      () => null,
+      (error: unknown) => error as { status: number; message: string; details: Record<string, unknown> },
+    );
+    await vi.waitFor(() => expect(fx.calls.map((call) => `${call.method} ${call.path}`)).toContain("GET /tailnet/-/devices?fields=all"));
+
+    // The operator saves a new tailnet while the device list is still pending.
+    await fx.access.updateConnection(connected.connectionId, {
+      config: { ...before.config, methodConfig: { tailnet: "example.com", agentTag: "tag:paperclip-agent" } },
+    });
+    fx.behavior.devicesGate = null;
+    release();
+
+    const failure = await pendingCheck;
+    expect(failure).toMatchObject({ status: 409, details: { code: "tailscale_connection_changed" } });
+    const after = await row(connected.connectionId);
+    expect(asRecord(after.config.methodConfig).tailnet).toBe("example.com");
+    expect(after.config.tailscale).toEqual(previousSummary);
+    expect(after.healthStatus).toBe("degraded");
+    expect(after.healthMessage).toContain("Run the check again");
+    expectRedacted(after);
+
+    // The next check runs on the saved values and replaces the summary.
+    fx.calls.length = 0;
+    const checked = await fx.access.checkHealth(connected.connectionId, actor);
+    expect(checked.connection.healthStatus).toBe("ok");
+    expect(fx.calls.map((call) => `${call.method} ${call.path}`)).toContain("GET /tailnet/example.com/devices?fields=all");
+    expect((await row(connected.connectionId)).config.tailscale).toMatchObject({ tailnet: "example.com" });
   });
 
   it("refuses to export the OAuth client to an agent", async () => {

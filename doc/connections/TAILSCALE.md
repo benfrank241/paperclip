@@ -4,8 +4,9 @@ This connection holds a Tailscale OAuth client for one tailnet. Paperclip uses
 it server-side to list tailnet devices and to mint short-lived, single-use,
 tagged auth keys. Later features build on it: tailnet machines as `ssh`
 environments and sandboxes that join the tailnet for one run. In this version
-agents get no tool from the connection. They get network reach, not control of
-the tailnet.
+the connection only verifies the OAuth client. Agents get no tool and no
+tailnet access from it; machine and sandbox access are separate, later
+features.
 
 Neither Paperclip ID nor Paperclip Connect participates. Cloud and self-hosted
 instances use the same server-side path. The instance needs outbound HTTPS to
@@ -32,7 +33,7 @@ Fields:
 1. Add the tags and grants below to the tailnet policy file in
    [Access controls](https://login.tailscale.com/admin/acls/file). Adjust the
    `tag:dev-box` and `tag:internal-api` examples to the machines and services
-   agents should reach.
+   that the later environment features will expose to agents.
 
    ```json
    {
@@ -89,16 +90,36 @@ The check proves three things in order: the client is valid, it can read
 devices (`devices:core`), and it can mint keys with the agent tag (`auth_keys`
 plus tag ownership). The test key is reusable `false`, ephemeral `true`,
 preauthorized `true`, expiry 300 seconds, and it is deleted immediately. It is
-deleted even when a later validation step fails. A failed deletion is reported
-with its own code; the key still expires on its own within five minutes.
+deleted even when a later validation step fails, and also when the create
+response carries a usable key id but otherwise fails validation. A failed
+deletion is reported as the primary error with its own code, because the
+undeleted key is the operator's next concern; the validation failure it
+superseded is kept in `details.secondary` and appended to the message. The key
+still expires on its own within five minutes. A response stream that fails
+mid-body is normalized to `tailscale_request_failed` like any other unusable
+response.
 
 The redacted result is stored on the connection as `config.tailscale`
-(`tailnet`, `scopes`, `tags`, `deviceCount`, `checkedAt`) and shown as the
-health message, for example:
+(`tailnet`, `scopes`, `tags`, `deviceCount`, `checkedAt`, `probeFingerprint`)
+and shown as the health message, for example:
 
 ```text
 Tailscale OAuth client is connected to the client's tailnet. Scopes: auth_keys, devices:core. Tags: tag:paperclip-agent. Devices visible: 12.
 ```
+
+The summary is written as a JSON merge of the `tailscale` key only, fenced on
+the connection's `methodConfig` and credential secret refs being the ones the
+probe used. A settings save or credential change that lands during the probe
+wins: the stale evidence is dropped and the check reports
+`tailscale_connection_changed` so the operator runs it again on the new values.
+
+Setup runs the health check and catalog discovery back to back. Discovery
+reuses the stored summary instead of minting a second test key only when the
+summary is less than a minute old, the connection's latest health check
+succeeded (`healthStatus` is `ok` and `healthCheckedAt` is not older than the
+summary), and `probeFingerprint` still matches the current tailnet, agent tag,
+and secret versions. A failed check, a new setting, or a rotated credential
+forces a fresh probe.
 
 Failures map to fixed codes. The message names the scope, tag, or tailnet to
 fix. Provider response bodies are discarded unread, because they can name
@@ -113,8 +134,9 @@ tailnets, tags, and key identifiers.
 | `tailscale_tailnet_not_found` | 422 | The tailnet name is wrong for this client. Use `-` or the exact name. |
 | `tailscale_rate_limited` | 502 | Tailscale returned 429. Retry in a minute. |
 | `tailscale_unreachable` | 502 | The instance could not reach `api.tailscale.com`. |
-| `tailscale_test_key_cleanup_failed` | 502 | The test key was minted but not deleted. It expires within five minutes. |
-| `tailscale_request_failed` | 502 | Another provider status or an unexpected response shape. |
+| `tailscale_test_key_cleanup_failed` | 502 | The test key was minted but not deleted. It expires within five minutes. Any validation failure it superseded is in `details.secondary`. |
+| `tailscale_request_failed` | 502 | Another provider status, an unexpected response shape, or a response stream that failed mid-body. |
+| `tailscale_connection_changed` | 409 | The tailnet, agent tag, or credentials changed while the check ran. The saved values are kept; run the check again. |
 
 ## Boundaries
 
@@ -136,13 +158,15 @@ Deterministic tests:
 - `server/src/__tests__/tailscale-api.test.ts`: the REST boundary against a
   fake Tailscale API. Token exchange shape, device listing, key mint and delete,
   every failure code, cached tokens, deletion of the test key after a later
-  failure, and redaction of the client secret, token, key secret, and provider
-  body.
+  failure or a malformed create response, cleanup failure reported first with
+  the superseded error as secondary, failed response streams, and redaction of
+  the client secret, token, key secret, and provider body.
 - `server/src/__tests__/tailscale-connection.test.ts`: the connection lifecycle
   through the real vault and setup path on embedded Postgres. Setup runs the
   check, stores the redacted summary, keeps secrets out of config and health
-  fields, maps a provider refusal to an actionable 422, and refuses credential
-  export.
+  fields, maps a provider refusal to an actionable 422, re-probes on refresh
+  after a failed check or a changed setting, keeps a settings save that lands
+  during a probe, and refuses credential export.
 - `packages/shared/src/app-definitions.test.ts`: catalog shape, fields,
   defaults, placement, and URL match.
 

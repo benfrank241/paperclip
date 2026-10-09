@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "slug": "tailscale",
   "name": "Tailscale",
-  "description": "Reach tailnet machines and private services from agent environments.",
+  "description": "Hold a Tailscale OAuth client so Paperclip can verify tailnet access and mint tagged auth keys server-side.",
   "categories": [
     "developer"
   ],
@@ -22,7 +22,7 @@
       "ownershipModes": [
         "customer"
       ],
-      "whenToUse": "Connect the tailnet whose machines and services agents should reach.",
+      "whenToUse": "Connect the tailnet that later Paperclip features will use for agent machines and sandboxes.",
       "defaults": {
         "serverUrl": "https://api.tailscale.com/api/v2"
       },
@@ -90,7 +90,7 @@
         "docs": "https://tailscale.com/kb/1215/oauth-clients"
       },
       "warnings": [
-        "Agents get network reach through this connection; they do not get tools that change the tailnet in this version."
+        "This version only verifies the OAuth client. Agents get no tools and no tailnet access from this connection yet; machine and sandbox access are separate, later features."
       ]
     }
   ],

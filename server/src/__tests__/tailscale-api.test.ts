@@ -16,7 +16,20 @@ type Behavior = {
   keyTags?: string[];
   keyBody?: unknown;
   unreachable?: boolean;
+  /** Return HTTP 200 for the device list with a body stream that fails mid-read. */
+  devicesStreamFails?: boolean;
 };
+
+function failingStreamResponse() {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      controller.enqueue(encoder.encode('{"devices":['));
+      controller.error(new TypeError(`terminated: ${PROVIDER_BODY}`));
+    },
+  });
+  return new Response(body, { status: 200, headers: { "Content-Type": "application/json" } });
+}
 
 function fakeTailscale(behavior: Behavior = {}) {
   const calls: { method: string; path: string; headers: Headers; body: string | undefined }[] = [];
@@ -32,6 +45,7 @@ function fakeTailscale(behavior: Behavior = {}) {
     if (new Headers(init.headers).get("Authorization") !== `Bearer ${TOKEN}`) return Response.json({ message: PROVIDER_BODY }, { status: 401 });
     if (path === "/tailnet/-/devices?fields=all" || path === "/tailnet/example.com/devices?fields=all") {
       if (behavior.devicesStatus) return Response.json({ message: PROVIDER_BODY }, { status: behavior.devicesStatus });
+      if (behavior.devicesStreamFails) return failingStreamResponse();
       return Response.json({ devices: [{ nodeId: "nFIXTURE1", name: "devbox.fixture.example.ts.net", addresses: ["100.64.0.7"], tags: ["tag:dev-box"], os: "linux" }, { nodeId: "nFIXTURE2", name: "laptop.fixture.example.ts.net", addresses: ["100.64.0.8"] }] });
     }
     if ((path === "/tailnet/-/keys" || path === "/tailnet/example.com/keys") && init.method === "POST") {
@@ -172,9 +186,58 @@ describe("Tailscale API boundary", () => {
     expect(error.message).not.toContain(TEST_KEY_SECRET);
   });
 
-  it("keeps the first failure when both validation and cleanup fail", async () => {
-    const error = await failure(api({ keyTags: ["tag:other"], deleteStatus: 500 }).client.verify());
-    expect(error).toMatchObject({ code: "tailscale_tag_not_owned" });
+  it("reports a cleanup failure first and keeps the superseded validation failure as secondary information", async () => {
+    const error = await failure(api({ keyTags: ["tag:other"], deleteStatus: 500 }).client.verify({ agentTag: "tag:paperclip-agent" }));
+    expect(error).toMatchObject({
+      status: 502,
+      code: "tailscale_test_key_cleanup_failed",
+      operation: "delete_key",
+      providerStatus: 500,
+      secondary: { code: "tailscale_tag_not_owned", operation: "create_key" },
+    });
+    expect(error.details).toMatchObject({ code: "tailscale_test_key_cleanup_failed", secondary: { code: "tailscale_tag_not_owned" } });
+    expect(error.message).toContain("could not delete it");
+    expect(error.message).toContain("Also: Tailscale issued the test key without tag:paperclip-agent");
+    expect(error.message).not.toContain(PROVIDER_BODY);
+    expect(error.message).not.toContain(TEST_KEY_SECRET);
+  });
+
+  it("deletes a key whose create response carries a usable id but fails validation", async () => {
+    const { client, calls } = api({ keyBody: { id: "kTESTKEY1", key: TEST_KEY_SECRET, capabilities: "bogus" } });
+    const error = await failure(client.verify());
+    expect(error).toMatchObject({ status: 502, code: "tailscale_request_failed", operation: "create_key", secondary: null });
+    expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      "POST /oauth/token",
+      "GET /tailnet/-/devices?fields=all",
+      "POST /tailnet/-/keys",
+      "DELETE /tailnet/-/keys/kTESTKEY1",
+    ]);
+  });
+
+  it("reports the cleanup failure when a malformed key response cannot be deleted either", async () => {
+    const { client, calls } = api({ keyBody: { id: "kTESTKEY1", capabilities: "bogus" }, deleteStatus: 500 });
+    const error = await failure(client.verify());
+    expect(error).toMatchObject({
+      code: "tailscale_test_key_cleanup_failed",
+      secondary: { code: "tailscale_request_failed", operation: "create_key" },
+    });
+    expect(calls.map((call) => `${call.method} ${call.path}`)).toContain("DELETE /tailnet/-/keys/kTESTKEY1");
+  });
+
+  it("skips deletion only when the malformed key response has no usable id", async () => {
+    const { client, calls } = api({ keyBody: { nope: true } });
+    await failure(client.verify());
+    expect(calls.filter((call) => call.method === "DELETE")).toHaveLength(0);
+  });
+
+  it("normalizes a response stream that fails mid-body into a fixed error", async () => {
+    const { client, calls } = api({ devicesStreamFails: true });
+    const error = await failure(client.verify());
+    expect(error).toMatchObject({ status: 502, code: "tailscale_request_failed", operation: "list_devices", providerStatus: null });
+    expect(error.message).toBe("Tailscale ended the response early during list devices. Try again in a minute.");
+    expect(error.message).not.toContain(PROVIDER_BODY);
+    // Nothing was minted, so there is nothing to clean up.
+    expect(calls.filter((call) => call.method === "POST" && call.path.endsWith("/keys"))).toHaveLength(0);
   });
 
   it("maps rate limits, unreachable hosts, and malformed bodies without echoing provider content", async () => {
@@ -191,7 +254,16 @@ describe("Tailscale API boundary", () => {
   });
 
   it("never puts the client secret, token, or provider body into an error", async () => {
-    for (const behavior of [{ tokenStatus: 401 }, { devicesStatus: 403 }, { createStatus: 400 }, { deleteStatus: 403 }, { unreachable: true }] satisfies Behavior[]) {
+    for (const behavior of [
+      { tokenStatus: 401 },
+      { devicesStatus: 403 },
+      { createStatus: 400 },
+      { deleteStatus: 403 },
+      { unreachable: true },
+      { devicesStreamFails: true },
+      { keyTags: ["tag:other"], deleteStatus: 500 },
+      { keyBody: { id: "kTESTKEY1", key: TEST_KEY_SECRET, capabilities: "bogus" }, deleteStatus: 500 },
+    ] satisfies Behavior[]) {
       const error = await failure(api(behavior).client.verify());
       const serialized = `${error.message} ${JSON.stringify(error.details)} ${error.stack ?? ""}`;
       expect(serialized).not.toContain(CLIENT_SECRET);

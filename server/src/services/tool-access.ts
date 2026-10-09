@@ -2895,6 +2895,7 @@ function healthFailureHttpStatus(failure: {
   if (failure.code === "tool_connection_transport_unsupported") return 422;
   if (failure.code === "cognee_access_unverified" || failure.code === "memory_api_key_rejected") return 422;
   if (failure.code.endsWith("_endpoint_rejected")) return 422;
+  if (failure.code === "tailscale_connection_changed") return 409;
   if (isActionableTailscaleCode(failure.code)) return 422;
   return 502;
 }
@@ -2908,9 +2909,45 @@ function isTailscaleHealth(value: unknown): value is TailscaleConnectionHealth {
     && typeof record.deviceCount === "number" && typeof record.checkedAt === "string";
 }
 
+/** The settings and vault secret versions a Tailscale check depends on. */
+function tailscaleProbeInputs(connection: typeof toolConnections.$inferSelect) {
+  const methodConfig = asRecord(asRecord(connection.config).methodConfig);
+  const tailnet = typeof methodConfig.tailnet === "string" && methodConfig.tailnet.trim() ? methodConfig.tailnet.trim() : TAILSCALE_DEFAULT_TAILNET;
+  const agentTag = typeof methodConfig.agentTag === "string" && methodConfig.agentTag.trim() ? methodConfig.agentTag.trim() : TAILSCALE_DEFAULT_AGENT_TAG;
+  const refs = connection.credentialSecretRefs
+    .map((ref) => [ref.configPath, ref.secretId, ref.versionSelector ?? "latest"] as const)
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  const fingerprint = createHash("sha256").update(JSON.stringify({ tailnet, agentTag, refs })).digest("hex").slice(0, 32);
+  return { methodConfig, tailnet, agentTag, fingerprint };
+}
+
+/**
+ * A stored Tailscale summary stands in for a new probe only when it is recent,
+ * the connection's latest health check succeeded, and the settings and
+ * credentials it was computed from are unchanged. A failed check after a good
+ * probe, a new tailnet or tag, or rotated credentials all force a fresh probe.
+ */
+function tailscaleProbeIsReusable(connection: typeof toolConnections.$inferSelect): boolean {
+  if (connection.healthStatus !== "ok") return false;
+  const recent = asRecord(connection.config).tailscale;
+  if (!isTailscaleHealth(recent) || typeof recent.probeFingerprint !== "string") return false;
+  const checkedAt = Date.parse(recent.checkedAt);
+  if (!Number.isFinite(checkedAt) || Date.now() - checkedAt >= TAILSCALE_PROBE_REUSE_MS) return false;
+  const lastHealthAt = connection.healthCheckedAt?.getTime() ?? Number.NaN;
+  // The summary must come from the check that produced the current "ok" status.
+  if (!Number.isFinite(lastHealthAt) || lastHealthAt < checkedAt) return false;
+  return recent.probeFingerprint === tailscaleProbeInputs(connection).fingerprint;
+}
+
 /** Tailscale codes the operator fixes in the provider console, not transient provider failures. */
 function isActionableTailscaleCode(code: string): boolean {
-  return code.startsWith("tailscale_") && !["tailscale_unreachable", "tailscale_rate_limited", "tailscale_request_failed", "tailscale_test_key_cleanup_failed"].includes(code);
+  return code.startsWith("tailscale_") && ![
+    "tailscale_unreachable",
+    "tailscale_rate_limited",
+    "tailscale_request_failed",
+    "tailscale_test_key_cleanup_failed",
+    "tailscale_connection_changed",
+  ].includes(code);
 }
 
 function unsupportedToolConnectionTransport() {
@@ -7498,24 +7535,41 @@ export function toolAccessService(
         actorId: null,
       });
     };
-    const methodConfig = asRecord(asRecord(connection.config).methodConfig);
-    const tailnet = typeof methodConfig.tailnet === "string" && methodConfig.tailnet.trim() ? methodConfig.tailnet.trim() : TAILSCALE_DEFAULT_TAILNET;
-    const agentTag = typeof methodConfig.agentTag === "string" && methodConfig.agentTag.trim() ? methodConfig.agentTag.trim() : TAILSCALE_DEFAULT_AGENT_TAG;
+    const { methodConfig, tailnet, agentTag, fingerprint } = tailscaleProbeInputs(connection);
     const [clientId, clientSecret] = await Promise.all([
       resolve("credentials.oauthClientId"),
       resolve("credentials.oauthClientSecret"),
     ]);
-    const health = await tailscaleApi({
+    const verified = await tailscaleApi({
       clientId,
       clientSecret,
       tailnet,
       request: (url, init) => requestRemoteHttpEndpoint(new URL(url), init),
     }).verify({ agentTag });
-    await db
+    const health: TailscaleConnectionHealth = { ...verified, probeFingerprint: fingerprint };
+    // Merge only the summary into the stored config, and only while the
+    // settings and credentials the probe used are still the ones on the row.
+    // A save that lands during the probe wins; the stale evidence is dropped.
+    const [stored] = await db
       .update(toolConnections)
-      .set({ config: { ...connection.config, tailscale: health }, updatedAt: new Date() })
-      .where(eq(toolConnections.id, connection.id));
-    connection.config = { ...connection.config, tailscale: health };
+      .set({
+        config: sql`${toolConnections.config} || ${JSON.stringify({ tailscale: health })}::jsonb`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(toolConnections.id, connection.id),
+          sql`coalesce(${toolConnections.config} -> 'methodConfig', '{}'::jsonb) = ${JSON.stringify(methodConfig)}::jsonb`,
+          sql`${toolConnections.credentialSecretRefs} = ${JSON.stringify(connection.credentialSecretRefs)}::jsonb`,
+        ),
+      )
+      .returning({ config: toolConnections.config });
+    if (!stored) {
+      throw conflict("Tailscale settings or credentials changed while the check was running. Run the check again.", {
+        code: "tailscale_connection_changed",
+      });
+    }
+    connection.config = stored.config;
     return health;
   }
 
@@ -7542,12 +7596,12 @@ export function toolAccessService(
       return [];
     }
     if (isTailscaleConnection(connection)) {
-      // Network reach only: no agent-facing tools in this version. Setup runs
-      // the health probe and catalog discovery back to back; reuse a summary
-      // from the last minute so one setup mints one test key, not two.
-      const recent = asRecord(connection.config).tailscale;
-      const checkedAt = isTailscaleHealth(recent) ? Date.parse(recent.checkedAt) : Number.NaN;
-      if (!(Number.isFinite(checkedAt) && Date.now() - checkedAt < TAILSCALE_PROBE_REUSE_MS)) {
+      // No agent-facing tools in this version. Setup runs the health probe and
+      // catalog discovery back to back; reuse the summary of a check that just
+      // succeeded on these exact settings so one setup mints one test key, not
+      // two. Anything else (a failed check, new settings, rotated credentials)
+      // probes again.
+      if (!tailscaleProbeIsReusable(connection)) {
         await validateTailscaleConnection(connection);
       }
       return [];

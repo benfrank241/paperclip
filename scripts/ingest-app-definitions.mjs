@@ -922,11 +922,11 @@ const apps = [
       }),
     { docsUrl: "https://docs.browser-use.com/cloud/api-v4-overview" },
   ],
-  ["tailscale", "Tailscale", "Reach tailnet machines and private services from agent environments.", "developer", "tailscale.com", ["https://login.tailscale.com/*"],
+  ["tailscale", "Tailscale", "Hold a Tailscale OAuth client so Paperclip can verify tailnet access and mint tagged auth keys server-side.", "developer", "tailscale.com", ["https://login.tailscale.com/*"],
     method("oauth-client", "rest_api", "api_key", { serverUrl: "https://api.tailscale.com/api/v2" }, "S3",
       "Create an OAuth client in [Tailscale trust credentials](https://login.tailscale.com/admin/settings/oauth) with the `auth_keys` scope (tags `tag:paperclip-agent` and `tag:paperclip-control`) and the `devices:core` scope, then paste its client ID and secret. Paperclip verifies the client server-side by listing devices and minting one short-lived ephemeral test key that it deletes immediately. The client never leaves the server.", {
         label: "Tailscale OAuth client",
-        whenToUse: "Connect the tailnet whose machines and services agents should reach.",
+        whenToUse: "Connect the tailnet that later Paperclip features will use for agent machines and sandboxes.",
         grantKinds: ["organization"],
         credentialFields: [
           { ...field("oauthClientId", "OAuth client ID", "k1234567CNTRL"), helperMd: "Copy the client ID shown after you create the OAuth client." },
@@ -941,7 +941,7 @@ const apps = [
           { key: "agentTag", label: "Agent tag", type: "text", required: true, advanced: true, defaultValue: "tag:paperclip-agent", placeholder: "tag:paperclip-agent", helperMd: "Tag assigned to machines and sandboxes that join the tailnet for agents. The OAuth client must be allowed to assign it.", validation: { pattern: "^tag:[A-Za-z0-9_-]+$", maxLength: 128 } },
         ],
         consoleLinks: { keys: "https://login.tailscale.com/admin/settings/oauth", docs: "https://tailscale.com/kb/1215/oauth-clients" },
-        warnings: ["Agents get network reach through this connection; they do not get tools that change the tailnet in this version."],
+        warnings: ["This version only verifies the OAuth client. Agents get no tools and no tailnet access from this connection yet; machine and sandbox access are separate, later features."],
       }),
     { docsUrl: "https://tailscale.com/kb/1215/oauth-clients" },
   ],

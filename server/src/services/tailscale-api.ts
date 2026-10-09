@@ -33,8 +33,23 @@ export class TailscaleApiError extends HttpError {
     readonly code: TailscaleHealthCode,
     readonly operation: TailscaleOperation,
     readonly providerStatus: number | null = null,
+    /** An earlier failure that this error supersedes, kept as secondary information. */
+    readonly secondary: { code: TailscaleHealthCode; operation: TailscaleOperation; message: string } | null = null,
   ) {
-    super(status, message, { code, operation, providerStatus });
+    super(status, message, { code, operation, providerStatus, ...(secondary ? { secondary } : {}) });
+  }
+
+  /** Return this error carrying `earlier` as secondary information, with its message appended. */
+  withSecondary(earlier: unknown): TailscaleApiError {
+    if (!(earlier instanceof TailscaleApiError)) return this;
+    return new TailscaleApiError(
+      this.status,
+      `${this.message} Also: ${earlier.message}`,
+      this.code,
+      this.operation,
+      this.providerStatus,
+      { code: earlier.code, operation: earlier.operation, message: earlier.message },
+    );
   }
 }
 
@@ -85,6 +100,8 @@ const keySchema = z.object({
     })
     .optional(),
 });
+/** The minimum needed to delete a key whose response otherwise failed validation. */
+const keyIdSchema = z.object({ id: z.string().min(1) });
 
 export interface TailscaleCreateAuthKeyInput {
   tags: string[];
@@ -162,14 +179,29 @@ function malformed(operation: TailscaleOperation): TailscaleApiError {
   return new TailscaleApiError(502, `Tailscale returned an unexpected response during ${operation.replace(/_/g, " ")}.`, "tailscale_request_failed", operation);
 }
 
+function truncated(operation: TailscaleOperation): TailscaleApiError {
+  return new TailscaleApiError(502, `Tailscale ended the response early during ${operation.replace(/_/g, " ")}. Try again in a minute.`, "tailscale_request_failed", operation);
+}
+
 async function readJson(response: Response, operation: TailscaleOperation): Promise<unknown> {
   if (response.status === 204 || !response.body) return null;
-  const reader = response.body.getReader();
+  let reader: ReadableStreamDefaultReader<Uint8Array>;
+  try {
+    reader = response.body.getReader();
+  } catch {
+    throw truncated(operation);
+  }
   const parts: Uint8Array[] = [];
   let bytes = 0;
   try {
     for (;;) {
-      const part = await reader.read();
+      let part: ReadableStreamReadResult<Uint8Array>;
+      try {
+        part = await reader.read();
+      } catch {
+        // A stream that fails mid-body may carry a provider message; normalize it.
+        throw truncated(operation);
+      }
       if (part.done) break;
       bytes += part.value.length;
       if (bytes > MAX_RESPONSE_BYTES) throw malformed(operation);
@@ -266,23 +298,34 @@ export function tailscaleApi(options: TailscaleApiOptions) {
       return parsed.data.devices;
     },
     async createAuthKey(input: TailscaleCreateAuthKeyInput): Promise<TailscaleAuthKey> {
-      const parsed = keySchema.safeParse(
-        await authorized("create_key", `${tailnetPath}/keys`, "POST", {
-          capabilities: {
-            devices: {
-              create: {
-                reusable: input.reusable,
-                ephemeral: input.ephemeral,
-                preauthorized: input.preauthorized,
-                tags: input.tags,
-              },
+      const raw = await authorized("create_key", `${tailnetPath}/keys`, "POST", {
+        capabilities: {
+          devices: {
+            create: {
+              reusable: input.reusable,
+              ephemeral: input.ephemeral,
+              preauthorized: input.preauthorized,
+              tags: input.tags,
             },
           },
-          expirySeconds: input.expirySeconds,
-          description: input.description,
-        }, input.tags[0]),
-      );
-      if (!parsed.success) throw malformed("create_key");
+        },
+        expirySeconds: input.expirySeconds,
+        description: input.description,
+      }, input.tags[0]);
+      const parsed = keySchema.safeParse(raw);
+      if (!parsed.success) {
+        // The key may exist even when the rest of the response is unusable.
+        // Delete it when the response carries a usable id, then report the shape.
+        const id = keyIdSchema.safeParse(raw);
+        if (id.success) {
+          try {
+            await api.deleteKey(id.data.id);
+          } catch (cleanup) {
+            throw cleanup instanceof TailscaleApiError ? cleanup.withSecondary(malformed("create_key")) : cleanup;
+          }
+        }
+        throw malformed("create_key");
+      }
       return {
         id: parsed.data.id,
         key: parsed.data.key ?? null,
@@ -300,7 +343,9 @@ export function tailscaleApi(options: TailscaleApiOptions) {
      * Connection check: token exchange, device list (proves devices:core), then
      * mint and immediately delete a one-off ephemeral tagged key (proves
      * auth_keys and tag ownership). The test key is deleted even when a later
-     * validation step fails; a cleanup failure is reported as its own code.
+     * validation step fails. A cleanup failure is reported as the primary error
+     * because an undeleted key is the operator's next concern; the validation
+     * failure it superseded is kept as secondary information.
      */
     async verify(input: { agentTag?: string } = {}): Promise<TailscaleConnectionHealth> {
       const agentTag = input.agentTag?.trim() || TAILSCALE_DEFAULT_AGENT_TAG;
@@ -318,20 +363,15 @@ export function tailscaleApi(options: TailscaleApiOptions) {
         expirySeconds: TAILSCALE_TEST_KEY_EXPIRY_SECONDS,
         description: "Paperclip connection check (deleted immediately)",
       });
-      let pending: unknown = null;
-      try {
-        if (key.tags.length && !key.tags.includes(agentTag)) {
-          throw new TailscaleApiError(422, `Tailscale issued the test key without ${agentTag}. Add that tag to the OAuth client's auth_keys scope and reconnect.`, "tailscale_tag_not_owned", "create_key");
-        }
-      } catch (error) {
-        pending = error;
-      }
+      const validation: TailscaleApiError | null = key.tags.length && !key.tags.includes(agentTag)
+        ? new TailscaleApiError(422, `Tailscale issued the test key without ${agentTag}. Add that tag to the OAuth client's auth_keys scope and reconnect.`, "tailscale_tag_not_owned", "create_key")
+        : null;
       try {
         await api.deleteKey(key.id);
-      } catch (error) {
-        pending ??= error;
+      } catch (cleanup) {
+        throw cleanup instanceof TailscaleApiError ? cleanup.withSecondary(validation) : cleanup;
       }
-      if (pending) throw pending;
+      if (validation) throw validation;
       return {
         tailnet,
         scopes,
