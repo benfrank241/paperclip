@@ -63,7 +63,7 @@
           "required": true,
           "placeholder": "Paste your Bitly API token",
           "secret": true,
-          "helperMd": "A Bitly API token from Settings → API is documented for MCP bearer auth, but no restriction scope is documented; treat it as capable of the full MCP catalog under that account. Paperclip cannot narrow the token."
+          "helperMd": "Bitly's API token may authorize the MCP's broad catalog under your account. Paperclip cannot narrow the token; keep write and destructive actions Off unless you explicitly need them."
         }
       ],
       "keyPlacement": {

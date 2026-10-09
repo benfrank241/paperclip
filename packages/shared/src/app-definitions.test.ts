@@ -12,6 +12,7 @@ import {
   getAvailableConnectionMethods,
   getAppDefinitionForUrl,
   getConnectableAppDefinition,
+  getAppStoreDefinition,
   getRecommendedConnectionMethod,
   recommendedDefaultsForApp,
   resolveConnectionMethodServerUrl,
@@ -273,11 +274,12 @@ describe("AppDefinition catalog", () => {
         "google-workspace-search",
       ]),
     );
-    expect(SELF_SERVE_MCP_CANDIDATES).toHaveLength(60);
+    expect(SELF_SERVE_MCP_CANDIDATES).toHaveLength(63);
     expect(BLOCKED_MCP_PROVIDERS.map((entry) => entry.slug)).toEqual([
       "g2",
       "vercel",
       "zomato",
+      "monday",
     ]);
     const definitionSlugs = new Set(APP_DEFINITIONS.map((app) => app.slug));
     const connectableSlugs = new Set(
@@ -294,7 +296,7 @@ describe("AppDefinition catalog", () => {
       ),
     ).toEqual([]);
     for (const entry of BLOCKED_MCP_PROVIDERS)
-      expect(connectableSlugs.has(entry.slug)).toBe(false);
+      expect(getAppStoreDefinition(entry.slug)).toBeNull();
   });
   it("separates GitHub tools from the review bot without changing the provider identity", () => {
     const github = getConnectableAppDefinition("github")!;
@@ -437,15 +439,15 @@ describe("AppDefinition catalog", () => {
     expect(channel("slack")?.guidanceMd).toContain("reactions");
     expect(channel("slack")?.guidanceMd).toContain("direct messages");
   });
-  it("keeps a complete, unique, dated evidence ledger for all 63 researched MCP providers", () => {
+  it("keeps a complete, unique, dated evidence ledger for all 67 researched MCP providers", () => {
     // Ledger-wide date reflects the last full re-verification (2026-08-26);
     // later provider additions carry their own research evidence, but
     // bumping the shared date would overstate freshness for the other providers.
     expect(SELF_SERVE_MCP_RESEARCH.verifiedAt).toBe("2026-08-26");
-    expect(SELF_SERVE_MCP_RESEARCH.entries).toHaveLength(63);
+    expect(SELF_SERVE_MCP_RESEARCH.entries).toHaveLength(67);
     expect(
       new Set(SELF_SERVE_MCP_RESEARCH.entries.map((entry) => entry.slug)),
-    ).toHaveProperty("size", 63);
+    ).toHaveProperty("size", 67);
     for (const entry of SELF_SERVE_MCP_RESEARCH.entries) {
       expect(new URL(entry.docsUrl).protocol).toBe("https:");
       expect(new URL(entry.serverUrl).protocol).toBe("https:");
@@ -849,16 +851,17 @@ describe("AppDefinition catalog", () => {
   it("withholds unverified and reserved providers from the app store without deleting their definitions", () => {
     expect([...APP_STORE_HIDDEN_SLUGS].sort()).toEqual([
       "beehiiv",
-      "bitly",
       "brex",
       "candid",
+      "clickup",
       "coda",
-      "context7",
       "egnyte",
       "embat",
       "kernel",
+      "klaviyo",
       "local-falcon",
       "manufact",
+      "monday",
       "oreilly",
       "planetscale",
       "razorpay",
@@ -868,7 +871,7 @@ describe("AppDefinition catalog", () => {
       "ticktick",
       "xero",
     ]);
-    expect(APP_STORE_DEFINITIONS).toHaveLength(77);
+    expect(APP_STORE_DEFINITIONS).toHaveLength(79);
     const connectableSlugs = new Set(
       CONNECTABLE_APP_DEFINITIONS.map((entry) => entry.slug),
     );
@@ -927,7 +930,7 @@ describe("AppDefinition catalog", () => {
         );
     }
   });
-  it("keeps every researched self-serve candidate implemented while blocked providers stay absent", () => {
+  it("keeps every researched self-serve candidate implemented while blocked providers stay out of Browse", () => {
     const definitions = new Map(
       CONNECTABLE_APP_DEFINITIONS.map((entry) => [entry.slug, entry]),
     );
@@ -936,7 +939,7 @@ describe("AppDefinition catalog", () => {
         true,
       );
     for (const blocked of BLOCKED_MCP_PROVIDERS)
-      expect(definitions.has(blocked.slug)).toBe(false);
+      expect(getAppStoreDefinition(blocked.slug)).toBeNull();
   });
   it("keeps all Google Workspace profiles aligned with their app, endpoint, scopes, ownership, risk, and write policy", () => {
     expect(GOOGLE_WORKSPACE_CONNECTOR_PROFILE_IDS).toEqual(

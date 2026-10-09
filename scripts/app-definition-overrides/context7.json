@@ -14,6 +14,7 @@
   "urlPatterns": [
     "https://mcp.context7.com/*"
   ],
+  "docsUrl": "https://context7.com/docs/api-guide",
   "methods": [
     {
       "key": "mcp",
@@ -36,6 +37,5 @@
         "Anonymous requests have low rate limits. Provider documentation says an API key raises limits and supports private repositories; this public method does not configure a key."
       ]
     }
-  ],
-  "docsUrl": "https://context7.com/docs/api-guide"
+  ]
 }

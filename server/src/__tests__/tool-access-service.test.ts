@@ -12563,122 +12563,147 @@ describeEmbeddedPostgres("tool access service", () => {
     expect(JSON.stringify(completed)).not.toContain("supabase-dcr-secret");
   });
 
-  it("preserves the provider's DCR client-auth ordering for Miro token exchange", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_MIRO_CLIENT_ID", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_MIRO_CLIENT_SECRET", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_ID", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_SECRET", "");
-    const company = await createCompany(db);
-    await grantBoardUser(db, company.id, "board", ["tools:manage_connections"]);
-    const service = createTestToolAccessService(db);
-    const connected = await service.connectGalleryApp(company.id, {
-      galleryKey: "miro",
-      connectionMethodKey: "mcp-oauth",
-      name: "Miro DCR",
-    });
-    const redirectUri = "https://paperclip.example/api/tools/oauth/callback";
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
-      const href = String(url);
-      if (
-        href === "https://mcp.miro.com/.well-known/oauth-protected-resource"
-      ) {
-        return mcpHttpResponse({
-          resource: "https://mcp.miro.com/",
-          authorization_servers: ["https://mcp.miro.com/"],
-        });
+  it.each(["default", "none", "agent", "company"] as const)(
+    "negotiates JSON OAuth tokens and preserves MCP agent reach (%s)", async (reach) => {
+      vi.stubEnv("PAPERCLIP_TOOL_OAUTH_MIRO_CLIENT_ID", "");
+      vi.stubEnv("PAPERCLIP_TOOL_OAUTH_MIRO_CLIENT_SECRET", "");
+      vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_ID", "");
+      vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_SECRET", "");
+      const company = await createCompany(db);
+      await grantBoardUser(db, company.id, "board", ["tools:manage_connections"]);
+      const service = createTestToolAccessService(db);
+      const connected = await service.connectGalleryApp(company.id, {
+        galleryKey: "miro",
+        connectionMethodKey: "mcp-oauth",
+        name: "Miro DCR",
+      });
+      const agent = await createAgent(db, company.id);
+      const installs = reach === "company" || reach === "default"
+        ? [{ targetType: "company" as const, targetId: company.id }]
+        : reach === "agent"
+          ? [{ targetType: "agent" as const, targetId: agent.id }]
+          : [];
+      if (reach !== "default") {
+        await service.putConnectionInstalls(connected.connectionId, { installs });
       }
-      if (
-        href === "https://mcp.miro.com/.well-known/oauth-authorization-server"
-      ) {
-        return mcpHttpResponse({
-          issuer: "https://mcp.miro.com/",
-          authorization_endpoint: "https://mcp.miro.com/authorize",
-          token_endpoint: "https://mcp.miro.com/token",
-          registration_endpoint: "https://mcp.miro.com/register",
-          grant_types_supported: ["authorization_code", "refresh_token"],
-          code_challenge_methods_supported: ["S256"],
-          token_endpoint_auth_methods_supported: [
+      const redirectUri = "https://paperclip.example/api/tools/oauth/callback";
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+        const href = String(url);
+        if (
+          href === "https://mcp.miro.com/.well-known/oauth-protected-resource"
+        ) {
+          return mcpHttpResponse({
+            resource: "https://mcp.miro.com/",
+            authorization_servers: ["https://mcp.miro.com/"],
+          });
+        }
+        if (
+          href === "https://mcp.miro.com/.well-known/oauth-authorization-server"
+        ) {
+          return mcpHttpResponse({
+            issuer: "https://mcp.miro.com/",
+            authorization_endpoint: "https://mcp.miro.com/authorize",
+            token_endpoint: "https://mcp.miro.com/token",
+            registration_endpoint: "https://mcp.miro.com/register",
+            grant_types_supported: ["authorization_code", "refresh_token"],
+            code_challenge_methods_supported: ["S256"],
+            token_endpoint_auth_methods_supported: [
+              "client_secret_post",
+              "client_secret_basic",
+            ],
+          });
+        }
+        if (href === "https://mcp.miro.com/register") {
+          const requestBody = JSON.parse(String(init?.body)) as Record<
+            string,
+            unknown
+          >;
+          expect(requestBody.token_endpoint_auth_method).toBe(
             "client_secret_post",
-            "client_secret_basic",
-          ],
-        });
-      }
-      if (href === "https://mcp.miro.com/register") {
-        const requestBody = JSON.parse(String(init?.body)) as Record<
-          string,
-          unknown
-        >;
-        expect(requestBody.token_endpoint_auth_method).toBe(
-          "client_secret_post",
-        );
-        return mcpHttpResponse({
-          client_id: "miro-dcr-client",
-          client_secret: "miro-dcr-secret",
-          redirect_uris: [redirectUri],
-          grant_types: ["authorization_code", "refresh_token"],
-          response_types: ["code"],
-          token_endpoint_auth_method: "client_secret_post",
-        });
-      }
-      if (href === "https://mcp.miro.com/token") {
-        const headers = new Headers(init?.headers);
-        const body = init?.body as URLSearchParams;
-        expect(headers.get("authorization")).toBeNull();
-        expect(body.get("client_id")).toBe("miro-dcr-client");
-        expect(body.get("client_secret")).toBe("miro-dcr-secret");
-        expect(body.get("code")).toBe("miro-code");
-        return mcpHttpResponse({
-          access_token: "miro-access-token",
-          refresh_token: "miro-refresh-token",
-          expires_in: 3600,
-          token_type: "Bearer",
-        });
-      }
-      if (href === "https://mcp.miro.com/") {
-        expect(new Headers(init?.headers).get("authorization")).toBe(
-          "Bearer miro-access-token",
-        );
-        return mcpHttpResponse({
-          jsonrpc: "2.0",
-          id: "paperclip-catalog-refresh",
-          result: {
-            tools: [{ name: "whoami", annotations: { readOnlyHint: true } }],
-          },
-        });
-      }
-      throw new Error(`unexpected fetch ${href}`);
-    });
+          );
+          return mcpHttpResponse({
+            client_id: "miro-dcr-client",
+            client_secret: "miro-dcr-secret",
+            redirect_uris: [redirectUri],
+            grant_types: ["authorization_code", "refresh_token"],
+            response_types: ["code"],
+            token_endpoint_auth_method: "client_secret_post",
+          });
+        }
+        if (href === "https://mcp.miro.com/token") {
+          const headers = new Headers(init?.headers);
+          const body = init?.body as URLSearchParams;
+          // Match providers that negotiate JSON only when explicitly requested.
+          if (headers.get("accept") !== "application/json") {
+            return new Response("access_token=miro-access-token", {
+              headers: { "content-type": "application/x-www-form-urlencoded" },
+            });
+          }
+          expect(headers.get("authorization")).toBeNull();
+          expect(body.get("client_id")).toBe("miro-dcr-client");
+          expect(body.get("client_secret")).toBe("miro-dcr-secret");
+          expect(body.get("code")).toBe("miro-code");
+          return mcpHttpResponse({
+            access_token: "miro-access-token",
+            refresh_token: "miro-refresh-token",
+            expires_in: 3600,
+            token_type: "Bearer",
+          });
+        }
+        if (href === "https://mcp.miro.com/") {
+          expect(new Headers(init?.headers).get("authorization")).toBe(
+            "Bearer miro-access-token",
+          );
+          return mcpHttpResponse({
+            jsonrpc: "2.0",
+            id: "paperclip-catalog-refresh",
+            result: {
+              tools: [{ name: "whoami", annotations: { readOnlyHint: true } }],
+            },
+          });
+        }
+        throw new Error(`unexpected fetch ${href}`);
+      });
 
-    const started = await service.startOAuth(
-      company.id,
-      connected.connectionId,
-      {
+      const started = await service.startOAuth(
+        company.id,
+        connected.connectionId,
+        {
+          redirectUri,
+          actor: { actorType: "user", actorId: "board" },
+        },
+      );
+      const state = new URL(started.authorizationUrl).searchParams.get("state");
+      expect(state).toBeTruthy();
+      const completed = await service.completeOAuthCallback({
+        state: state!,
+        code: "miro-code",
         redirectUri,
         actor: { actorType: "user", actorId: "board" },
-      },
-    );
-    const state = new URL(started.authorizationUrl).searchParams.get("state");
-    expect(state).toBeTruthy();
-    const completed = await service.completeOAuthCallback({
-      state: state!,
-      code: "miro-code",
-      redirectUri,
-      actor: { actorType: "user", actorId: "board" },
-    });
+      });
 
-    expect(completed.actions.readOnly).toEqual([
-      expect.objectContaining({ toolName: "whoami", riskLevel: "read" }),
-    ]);
-    const [connection] = await db
-      .select()
-      .from(toolConnections)
-      .where(eq(toolConnections.id, connected.connectionId));
-    expect(connection.config).toMatchObject({
-      oauth: { clientTokenEndpointAuthMethod: "client_secret_post" },
-    });
-    expect(JSON.stringify(connection.config)).not.toContain("miro-dcr-secret");
-    expect(JSON.stringify(completed)).not.toContain("miro-dcr-secret");
-  });
+      expect(completed.actions.readOnly).toEqual([
+        expect.objectContaining({ toolName: "whoami", riskLevel: "read" }),
+      ]);
+      const [connection] = await db
+        .select()
+        .from(toolConnections)
+        .where(eq(toolConnections.id, connected.connectionId));
+      expect(connection.config).toMatchObject({
+        oauth: { clientTokenEndpointAuthMethod: "client_secret_post" },
+      });
+      expect(JSON.stringify(connection.config)).not.toContain("miro-dcr-secret");
+      expect(JSON.stringify(completed)).not.toContain("miro-dcr-secret");
+      const installed = await db.select().from(toolConnectionInstalls)
+        .where(eq(toolConnectionInstalls.connectionId, connected.connectionId));
+      expect(installed.map(({ targetType, targetId }) => ({ targetType, targetId }))).toEqual(installs);
+      const [profile] = await db.select().from(toolProfiles)
+        .where(eq(toolProfiles.profileKey, `app:${connected.connectionId}`));
+      const bindings = await db.select().from(toolProfileBindings)
+        .where(eq(toolProfileBindings.profileId, profile.id));
+      expect(bindings.map(({ targetType, targetId }) => ({ targetType, targetId }))).toEqual(installs);
+    },
+  );
 
   it("accepts provider-added DCR grants without adopting them", async () => {
     vi.stubEnv("PAPERCLIP_TOOL_OAUTH_HUGGING_FACE_CLIENT_ID", "");
