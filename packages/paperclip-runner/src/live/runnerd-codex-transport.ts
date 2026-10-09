@@ -838,6 +838,14 @@ async function awaitRunnerSuspensionBarrier(input: {
   return false;
 }
 
+function runnerCloseGraceMs(options: Pick<CapabilityRunnerdCodexTransportOptions, "provider" | "acpxAgent" | "closeGraceMs">): number {
+  // Idle Pi retirement may consume its five-second RPC stop window. Keep a
+  // separate five-second drain round trip and the bounded suspension reserve.
+  // Explicit caller deadlines remain authoritative; all settlement proofs stay
+  // mandatory even when the provider already completed its task.
+  return options.closeGraceMs ?? (options.provider === "acpx" && options.acpxAgent === "pi" ? 15_000 : 10_000);
+}
+
 function runnerCloseDeadlines(
   startedAtMs: number,
   graceMs: number,
@@ -4428,7 +4436,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
       // fresh run authority never inherits the prior run's pending events.
       const { preparationDeadline, closeDeadline } = runnerCloseDeadlines(
         Date.now(),
-        this.options.closeGraceMs ?? 10_000,
+        runnerCloseGraceMs(this.options),
       );
       if (!(await this.#runnerHasExited())) {
         // Let an already-admitted tool result reach its original provider
@@ -7040,6 +7048,7 @@ export const runnerdRecoveryInternals = Object.freeze({
   recoveredRunAttachment,
   releaseRunnerProcessOwnership,
   runnerCloseDeadlines,
+  runnerCloseGraceMs,
   rotatedRunAttachPayload,
   rotateExternalAuthorityEpoch,
   turnStartCommandResultValid,
