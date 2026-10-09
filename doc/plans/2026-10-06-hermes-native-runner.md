@@ -2068,3 +2068,15 @@ The legacy continuation CI failure remains a separate failed measurement.
 Current-head full CI, remaining review, paid/subscription credentials, clean
 consumer and actual Daytona qualification are still required. No local Docker
 or Rust build, provider credential or paid inference is used in these checks.
+
+
+Cloud native run [37924688522](https://github.com/paperclipai/paperclip/actions/runs/37924688522)
+passes both targets at PR head `84aa0fad11212f919c634ae68c2d90fc3f1d6e52` and
+actual checkout `c796716adf2fd9197e0e269ce5fb1005af6136fb`. Collected provenance
+verifies fresh Mac closure
+`fdf1369e1713fcf6dbaf43bb4a08e2cb819120bfef47d6047adfe6f7f47778a1`
+and Linux closure
+`62f0071c5be0b5d07088b0d1f9d280db64390f7aeab395a526059afaa3573135`.
+Only the small evidence files are extracted locally. The native controls and
+question-budget changes above follow that run and need their own fresh CI.
+This remains deterministic transport evidence, not paid or Daytona acceptance.
