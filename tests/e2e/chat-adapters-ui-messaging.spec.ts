@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { writeFile } from "node:fs/promises";
 
 import {
   fulfill,
@@ -1302,6 +1303,85 @@ test.describe("Exact failed chat run retry", () => {
       }),
       "create exact-retry task",
     );
+  });
+
+  test("a cross-company UUID redirect keeps same-name agent caches isolated", async ({
+    page,
+    request,
+  }, testInfo) => {
+    const other = await seedCompanyAndAgent(request);
+    const foreignTitle = "Foreign UUID agent cache sentinel";
+    const scopedTitle = "Company-scoped Maya cache sentinel";
+    const [foreignCompany, scopedCompany] = await Promise.all([
+      json<{ id: string; name: string }>(await request.get(`/api/companies/${other.companyId}`), "read foreign company"),
+      json<{ id: string; name: string }>(await request.get(`/api/companies/${seed.companyId}`), "read scoped company"),
+    ]);
+    expect(foreignCompany.id).toBe(other.companyId);
+    expect(scopedCompany.id).toBe(seed.companyId);
+    expect(foreignCompany.name).not.toBe(scopedCompany.name);
+    await json(await request.patch(`/api/agents/${other.agentId}`, {
+      data: { title: foreignTitle },
+    }), "set foreign agent title");
+    await json(await request.patch(`/api/agents/${seed.agentId}`, {
+      data: { title: scopedTitle },
+    }), "set scoped agent title");
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let observed!: () => void;
+    const canonicalRead = new Promise<void>((resolve) => { observed = resolve; });
+    page.once("close", release);
+    await page.route("**/api/agents/maya?*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get("companyId") !== seed.companyId) {
+        await route.fallback();
+        return;
+      }
+      const response = await route.fetch();
+      const agent = await response.json();
+      expect(agent.id).toBe(seed.agentId);
+      observed();
+      await held;
+      await route.fulfill({ response });
+    });
+    try {
+      await page.goto(`/${seed.prefix}/agents/${other.agentId}/overview`);
+      await expect(page).toHaveURL(new RegExp(`/${other.prefix}/agents/maya/overview$`));
+      await expect(page.getByText(foreignTitle, { exact: true }).first()).toBeVisible();
+      await expect.poll(() => page.evaluate(() => localStorage.getItem("paperclip.selectedCompanyId")))
+        .toBe(other.companyId);
+      await page.getByRole("button", { name: `Open ${foreignCompany.name} organization switcher`, exact: true }).click();
+      const menuItems = await page.getByRole("menuitem").allTextContents();
+      const scopedOption = page.getByRole("menuitem").filter({ hasText: scopedCompany.name });
+      const chosenOption = await scopedOption.innerText();
+      const routeHistory: string[] = [];
+      page.on("framenavigated", (frame) => { if (frame === page.mainFrame()) routeHistory.push(frame.url()); });
+      await scopedOption.click();
+      await writeFile(testInfo.outputPath("cross-company-menu-context.json"), JSON.stringify({
+        foreignCompany, scopedCompany, seed, other, menuItems, chosenOption, routeHistory,
+        afterSwitchUrl: page.url(),
+        afterSwitchSelectedCompany: await page.evaluate(() => localStorage.getItem("paperclip.selectedCompanyId")),
+      }, null, 2));
+      await expect(page).toHaveURL(new RegExp(`/${seed.prefix}/dashboard$`));
+      await page.getByRole("link", { name: "Agents", exact: true }).first().click();
+      await page.getByRole("link", { name: "Maya", exact: true }).first().click();
+      await expect(page).toHaveURL(new RegExp(`/${seed.prefix}/agents/maya(?:/overview)?$`));
+      await expect(page.getByText(foreignTitle, { exact: true })).toHaveCount(0);
+      await Promise.race([
+        canonicalRead,
+        page.getByText("Paperclip hit an error", { exact: true }).waitFor({ timeout: 15_000 }).then(() => {
+          throw new Error("Cross-company canonical navigation reached the app error boundary");
+        }),
+      ]);
+      release();
+      await expect(page.getByText(scopedTitle, { exact: true }).first()).toBeVisible();
+      await expect(page.getByText(foreignTitle, { exact: true })).toHaveCount(0);
+      await expect(page.getByText("Paperclip hit an error", { exact: true })).toHaveCount(0);
+      await expect.poll(() => page.evaluate(() => localStorage.getItem("paperclip.selectedCompanyId")))
+        .toBe(seed.companyId);
+      await page.screenshot({ path: testInfo.outputPath("cross-company-canonical-agent.png") });
+    } finally {
+      release();
+    }
   });
 
   for (const surface of ["agent run", "Inbox", "Legacy Inbox"] as const) {
