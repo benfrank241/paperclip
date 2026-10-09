@@ -1364,14 +1364,16 @@ test.describe("Exact failed chat run retry", () => {
         afterSwitchSelectedCompany: await page.evaluate(() => localStorage.getItem("paperclip.selectedCompanyId")),
       }, null, 2));
       await expect(page).toHaveURL(new RegExp(`/${seed.prefix}/dashboard$`));
-      // The announcement waits for its feed and a settle timer. It can appear
-      // after the dashboard URL settles, while the sidebar click is retrying.
-      // Dismiss it through the normal control when it actually blocks the link.
-      await expect(async () => {
-        if (await dismissAnnouncement.isVisible()) await dismissAnnouncement.click();
-        await page.getByRole("link", { name: "Agents", exact: true }).first().click({ timeout: 1_000 });
-      }).toPass({ timeout: 10_000 });
-      await page.getByRole("link", { name: "Maya", exact: true }).first().click();
+      // The feed can settle after either navigation. Dismiss the actual card
+      // through its normal control if it blocks either sidebar link.
+      const clickSidebarLink = async (name: string) => {
+        await expect(async () => {
+          if (await dismissAnnouncement.isVisible()) await dismissAnnouncement.click({ timeout: 1_000 });
+          await page.getByRole("link", { name, exact: true }).first().click({ timeout: 1_000 });
+        }).toPass({ timeout: 10_000 });
+      };
+      await clickSidebarLink("Agents");
+      await clickSidebarLink("Maya");
       await expect(page).toHaveURL(new RegExp(`/${seed.prefix}/agents/maya(?:/overview)?$`));
       await expect(page.getByText(foreignTitle, { exact: true })).toHaveCount(0);
       await Promise.race([
