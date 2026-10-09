@@ -80,13 +80,15 @@ class TurnBilling:
         with self._lock:
             self._closed = True
             completed = [r for r in self._requests if r.valid and r.done]
-            priced = [r for r in completed if r.cost is not None]
+            # A verified usage frame can precede a transport interruption.
+            # Keep that known charge without certifying the request's totals.
+            priced = [r for r in self._requests if r.cost_verified]
             tokenized = [r for r in completed if r.tokens is not None]
             scope_complete = owned_work_complete and not self._overflow and not self._children
             cost = sum(r.cost for r in priced)
             if cost > 1000000000000000:
                 raise ValueError("Hermes reported turn cost exceeds its receipt bound")
-            complete = scope_complete and len(priced) == len(self._requests)
+            complete = scope_complete and len(completed) == len(self._requests) and len(priced) == len(self._requests)
             token_complete = scope_complete and len(tokenized) == len(self._requests)
             totals = tuple(sum(r.tokens[i] for r in tokenized) for i in range(4))
             if any(value > 9007199254740991 for value in totals):
@@ -107,6 +109,7 @@ class WireReceipt:
         self.done = False
         self.tokens = None
         self.cost = None
+        self.cost_verified = False
         self._seen_usage = False
         self._buffer = bytearray()
         self._data = []
@@ -117,9 +120,11 @@ class WireReceipt:
             value = json.loads(data, parse_float=Decimal)
         except (ValueError, UnicodeError):
             self.valid = False
+            self.cost_verified = False
             return
         if not isinstance(value, dict):
             self.valid = False
+            self.cost_verified = False
             return
         usage = value.get("usage")
         if usage is not None:
@@ -128,13 +133,16 @@ class WireReceipt:
                 self.valid = False
             self._seen_usage = True
             self.tokens, self.cost = tokens, cost
+            self.cost_verified = self.valid and cost is not None
         if value.get("error") is not None:
             self.valid = False
+            self.cost_verified = False
 
     def json(self, body):
         with self.owner._lock:
             if len(body) > MAX_BODY:
                 self.valid = False
+                self.cost_verified = False
             else:
                 self._document(body)
             self.done = True

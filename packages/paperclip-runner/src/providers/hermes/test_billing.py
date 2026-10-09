@@ -80,7 +80,19 @@ class Accounting(unittest.TestCase):
             self.assertFalse(ledger.finish()[0]["complete"])
         ledger = TurnBilling(); receipt = ledger.begin()
         receipt.json(document()); receipt.json(document("0.01"))
-        self.assertFalse(ledger.finish()[0]["complete"])
+        billed, _ = ledger.finish()
+        self.assertFalse(billed["complete"])
+        self.assertEqual(billed["reportedRequestCount"], 0)
+        self.assertEqual(billed["amountUsdExact"], "0.000000000")
+
+    def test_verified_frame_before_an_unfinished_response_is_a_known_subtotal(self):
+        ledger = TurnBilling(); receipt = ledger.begin()
+        receipt.feed(b"data: " + document() + b"\n\n")
+        billed, tokens = ledger.finish()
+        self.assertEqual(billed["reportedRequestCount"], 1)
+        self.assertEqual(billed["amountUsdExact"], "0.004200000")
+        self.assertFalse(billed["complete"])
+        self.assertIsNone(tokens)
 
     def test_truncation_and_oversized_frames_are_unpriced(self):
         for wire in (b"data: " + document() + b"\n", b"data: " + b"x" * (MAX_FRAME + 1)):
@@ -127,6 +139,31 @@ class Transport(unittest.TestCase):
         self.assertEqual(billed["requestCount"], 2)
         self.assertEqual(billed["reportedRequestCount"], 1)
         self.assertEqual(billed["amountUsdExact"], "0.004200000")
+        self.assertFalse(billed["complete"])
+        self.assertIsNone(tokens)
+
+    def test_interrupted_stream_keeps_its_verified_charge_before_a_successful_retry(self):
+        class InterruptedStream(httpx.SyncByteStream):
+            def __iter__(self):
+                yield b"data: " + document() + b"\n\n"
+                raise httpx.ReadError("synthetic interrupted stream")
+
+        calls = []
+        def reply(request):
+            calls.append(request)
+            if len(calls) == 1:
+                return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=InterruptedStream())
+            return httpx.Response(200, content=document())
+
+        with httpx.Client(transport=httpx.MockTransport(reply)) as client, OpenAI(http_client=client, api_key="synthetic-fixture-only", base_url="https://openrouter.ai/api/v1") as sdk:
+            with self.assertRaises(httpx.ReadError):
+                with sdk.chat.completions.create(model="fixture-model", messages=[], stream=True) as stream:
+                    list(stream)
+            sdk.chat.completions.create(model="fixture-model", messages=[])
+        billed, tokens = self.ledger.finish()
+        self.assertEqual(billed["requestCount"], 2)
+        self.assertEqual(billed["reportedRequestCount"], 2)
+        self.assertEqual(billed["amountUsdExact"], "0.008400000")
         self.assertFalse(billed["complete"])
         self.assertIsNone(tokens)
 
