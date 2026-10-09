@@ -1671,8 +1671,9 @@ when it has a session grant. The independently checked skill bytes stay intact.
 The reviewed Mac and Linux closure pins change only for the bridge source.
 Fresh cloud materialization, current-head native checks and PR verification are
 required. No local Docker or Rust build is used. Shared configuration adoption,
-routine completion and transcript UI patches remain unapplied outside the fixed
-PR file set. Hermes remains pending the full release qualification matrix.
+routine completion and transcript UI corrections are implementation work within
+the authorized release scope. The review-size split below replaces the earlier
+fixed-file-set interpretation. Hermes remains pending the full release matrix.
 
 ### 2026-10-08 active steering through the production transport
 
@@ -1718,3 +1719,41 @@ CI; a Mac skip is not Linux evidence. Candidate closure pins replace only
 match them before any runtime is admitted. The prior Linux failure remains
 recorded. Both existing PR file sets remain unchanged, and no local Docker or
 Rust build is used. Full provider, product and Daytona qualification is pending.
+
+### 2026-10-09 shared verification and completion corrections
+
+The repository requires each PR to contain fewer than 100 changed files. It
+does not require a frozen file list or extra approval for necessary shared fixes.
+The stack now retains the original public setup and execution-account cache
+tests in a small follow-up review. Their full contents match the pre-split
+snapshot. The original Cursor setup tests remain in the parent. No assertion is
+removed. The stack is #15434, #15435, #15436 and #15654.
+
+The test worker now makes only its private test-home directories writable
+before removal. It skips symbolic links. A real worker-exit check removes a
+read-only nested runtime bundle while leaving an outside link target unchanged.
+All 30 focused runtime-context and working-copy tests pass locally. Fresh Linux
+CI remains required; the earlier cleanup failure retains its verdict.
+
+The Daytona image identity now includes the three Hermes setup helpers. All 11
+image-contract tests pass, including a changed-source case for each helper.
+The public setup suite passes five tests and the account-cache suite passes four.
+These checks do not execute Docker or a model.
+
+Native status finalization now updates an originating routine firing in the
+same status-decision transaction. The real-database conformance suite passes
+34 tests, including completion replay and rollback with an unchanged firing.
+Hermes environment checks now verify its pinned local installation and return
+a pending-qualification warning. Remote checks admit Linux x64 and macOS arm64;
+unsupported platforms and unavailable installations fail. The adapter suite
+passes all 39 tests after adding the server's missing public probe export.
+The initial failed export tests remain recorded. Live routine and configuration
+journeys remain separate acceptance requirements.
+
+Shared transcript projection now preserves plain native results, uses actual
+process arguments for command previews and renders serialized arguments without
+JSON punctuation. Later arguments update the same tool row; overlapping tool
+IDs remain separate. Native output preserves newlines and failure details.
+Unrecognized structured results remain inspectable. All 166 transcript and
+boundary checks pass locally, and UI token gates pass. These are presentation
+contract checks; rendered browser acceptance remains required.

@@ -118,6 +118,30 @@ describe("provider notice presentation", () => {
 });
 
 describe("nativeRunEventsToTranscript", () => {
+  it.each(["command", "cmd"])("uses native %s arguments for process previews and preserves plain results", (key) => {
+    const input = { [key]: "printf 'native output'", cwd: "/workspace" };
+    const transcript = nativeRunEventsToTranscript([
+      event(1, "tool.execution.started", {
+        schema: "paperclip.tool.execution.v1", executionId: "hermes-terminal",
+        transport: "process", operation: "execute", name: "terminal", status: "running",
+      }),
+      itemEvent(2, "item.started", "hermes-terminal", {
+        item: { type: "tool_use", id: "hermes-terminal", name: "terminal", input: JSON.stringify(input) },
+      }),
+      event(3, "tool.execution.completed", {
+        schema: "paperclip.tool.execution.v1", executionId: "hermes-terminal",
+        transport: "process", operation: "execute", name: "terminal", status: "completed",
+      }),
+      itemEvent(4, "item.completed", "hermes-terminal", {
+        item: { type: "tool_result", tool_use_id: "hermes-terminal", result: "native output\nnext line" },
+      }),
+    ]);
+    expect(transcript).toMatchObject([
+      { kind: "tool_call", toolUseId: "hermes-terminal", name: "Bash", input },
+      { kind: "tool_result", toolUseId: "hermes-terminal", content: "native output\nnext line", isError: false },
+    ]);
+  });
+
   describe("accepted response-wake authority", () => {
     function fixture() {
       const result = {
