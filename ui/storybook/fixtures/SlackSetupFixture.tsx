@@ -10,7 +10,7 @@ import { defaultSlackAppConfiguration } from "@paperclipai/shared";
 export type SlackSetupScenario = "choose" | "create" | "manual" | "install" | "declined" | "uncertain" | "manifest_pending" | "recovery" | "verify" | "avatar_failed" | "welcome_failed" | "success";
 
 /** Production wizard over a local provider fixture. No requests go to Slack. */
-export function SlackSetupFixture({ scenario = "create" }: { scenario?: SlackSetupScenario }) {
+export function SlackSetupFixture({ scenario = "create", managed = false, managedAvailable = true, workspaceCount = 1 }: { scenario?: SlackSetupScenario; managed?: boolean; managedAvailable?: boolean; workspaceCount?: number }) {
   const [ready, setReady] = useState(false);
   const [signalVerification, setSignalVerification] = useState<() => void>(() => () => {});
   useLayoutEffect(() => {
@@ -20,14 +20,16 @@ export function SlackSetupFixture({ scenario = "create" }: { scenario?: SlackSet
     const endpoint: ChatEndpoint = {
       id: "slack-story", companyId: "company-storybook", provider: "slack", status: "draft",
       assignedAgentId: agent.id, assignedAgentName: agent.name, allowUnlinkedPeople: false,
-      setup: { step: "provider_setup", slackSetupMethod: scenario === "manual" ? "manual" : "automatic",
+      setup: { step: "provider_setup", slackSetupMethod: scenario === "manual" ? "manual" : managed ? "managed" : "automatic",
         slackApp: defaultSlackAppConfiguration(agent.name),
         webhookUrl: "https://ingress.example/api/chat-webhooks/slack-story/slack",
         slackOAuthCallbackUri: "https://board.example/api/chat-slack/oauth/callback",
       },
     };
+    const grantId = "11111111-1111-4111-8111-111111111111";
+    let authorized = workspaceCount > 0;
     const created = () => {
-      endpoint.setup!.slackRegistration = { status: "install", appId: "ASTORY", managementUrl: "https://api.slack.com/apps/ASTORY" };
+      endpoint.setup!.slackRegistration = { status: "install", ...(managed ? { managerGrantId: grantId } : {}), appId: "ASTORY", managementUrl: "https://api.slack.com/apps/ASTORY" };
       endpoint.setup!.slackAvatar = scenario === "avatar_failed" ? { status: "failed", errorCode: "slack_avatar_upload_failed" } : { status: "uploaded", uploadedAt: new Date().toISOString() };
     };
     let linked = false;
@@ -39,9 +41,9 @@ export function SlackSetupFixture({ scenario = "create" }: { scenario?: SlackSet
     };
     if (["install", "declined", "recovery", "manifest_pending"].includes(scenario)) created();
     if (scenario === "manifest_pending") endpoint.setup!.slackRegistration!.errorCode = "slack_manifest_update_pending";
-    if (scenario === "declined") endpoint.setup!.slackRegistration!.errorCode = "slack_install_declined";
+    if (scenario === "declined") endpoint.setup!.slackRegistration!.errorCode = managed ? "slack_approval_pending" : "slack_install_declined";
     if (scenario === "recovery") endpoint.setup!.slackRegistration = { ...endpoint.setup!.slackRegistration!, status: "credentials_saved", errorCode: "slack_configuration_incomplete" };
-    if (scenario === "uncertain") endpoint.setup!.slackRegistration = { status: "uncertain", errorCode: "slack_creation_uncertain", managementUrl: "https://api.slack.com/apps" };
+    if (scenario === "uncertain") endpoint.setup!.slackRegistration = { status: "uncertain", ...(managed ? { managerGrantId: grantId } : {}), errorCode: "slack_creation_uncertain", managementUrl: "https://api.slack.com/apps" };
     if (["verify", "avatar_failed", "welcome_failed", "success"].includes(scenario)) installed();
     if (["avatar_failed", "welcome_failed", "success"].includes(scenario)) {
       endpoint.setup!.webhookVerifiedAt = new Date().toISOString();
@@ -52,6 +54,12 @@ export function SlackSetupFixture({ scenario = "create" }: { scenario?: SlackSet
     window.fetch = async (input, init) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, window.location.origin);
       const path = url.pathname;
+      if (path === "/api/companies/company-storybook/chat-slack/setup-options") return Response.json({ managedAvailable: managed && managedAvailable, defaultMethod: managed && managedAvailable ? "managed" : "automatic", workspaces: managed && authorized ? Array.from({ length: Math.max(1, workspaceCount) }, (_, i) => ({ grantId: i ? "22222222-2222-4222-8222-222222222222" : grantId, workspaceId: `TSTORY${i}`, workspaceName: i ? "Research workspace" : "Paperclip", userId: "UPERSON" })) : [] });
+      if (path === "/api/chat-endpoints/slack-story/slack/managed/authorize") {
+        authorized = true;
+        return Response.json({ authorizationUrl: `${window.location.href.split("#")[0]}#simulated-manager-consent`, expiresAt: new Date(Date.now() + 600_000).toISOString() });
+      }
+      if (path === "/api/chat-endpoints/slack-story/slack/managed/provision") { installed(); return Response.json({}); }
       if (path === "/api/companies/company-storybook/agents") return Response.json(agents);
       if (path === `/api/agents/${agent.id}`) return Response.json(agent);
       if (path === "/api/companies/company-storybook/chat-endpoints") {
@@ -94,7 +102,7 @@ export function SlackSetupFixture({ scenario = "create" }: { scenario?: SlackSet
     };
     setReady(true);
     return () => { window.fetch = original; };
-  }, [scenario]);
+  }, [scenario, managed, managedAvailable, workspaceCount]);
   return <div className="space-y-6 p-6">
     <aside className="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3 text-sm text-muted-foreground">
       Preview fixture: Slack consent, callbacks, and identity discovery are simulated.

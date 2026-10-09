@@ -155,6 +155,39 @@ test.describe.serial("native chat adapter UI", () => {
     seed = await seedCompanyAndAgent(request);
   });
 
+  test("Slack: managed workspace setup has three stops, resumes and completes without pasting credentials", async ({ page }) => {
+    const slack = PROVIDERS.find(provider => provider.provider === "slack")!;
+    const mock = await installChatControlPlaneMock(page, slack, seed, { enableChatConnectors: true, managedSlack: true });
+    await page.goto(`/${seed.prefix}/apps/chat/connect?provider=slack&purpose=chat`);
+    await selectMaya(page);
+    await expect(page.getByRole("heading", { name: "Add to Slack", exact: true })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Connection setup progress" }).getByRole("button")).toHaveCount(3);
+    await expect(page.getByRole("button", { name: "Use your own app" })).toBeVisible();
+    await page.reload();
+    await page.getByRole("button", { name: "Add to Slack", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Send a message to your agent", exact: true })).toBeVisible();
+    await expect(page.getByLabel("App configuration access token", { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel("Signing Secret", { exact: true })).toHaveCount(0);
+    await page.reload();
+    expect(mock.slackCreations).toBe(1); expect(mock.slackInstallations).toBe(1);
+    mock.setWebhookVerified();
+    await expect(page.getByRole("heading", { name: "Success", exact: true })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Connection setup progress" }).getByRole("button")).toHaveCount(3);
+    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await expect(page).toHaveURL(/\/apps\/chat\/endpoint-slack\/settings$/);
+  });
+  test("Slack: own-app selection persists before provisioning", async ({ page }) => {
+    const slack = PROVIDERS.find(provider => provider.provider === "slack")!;
+    await installChatControlPlaneMock(page, slack, seed, { enableChatConnectors: true, managedSlack: true });
+    await page.goto(`/${seed.prefix}/apps/chat/connect?provider=slack&purpose=chat&resume=endpoint-slack`);
+    await page.getByRole("button", { name: "Use your own app" }).click();
+    await expect(page.getByRole("heading", { name: "App configuration access token", exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "App configuration access token", exact: true })).toBeVisible();
+    await page.getByText("Advanced", { exact: true }).click();
+    await page.getByRole("button", { name: "Use managed setup" }).click();
+    await expect(page.getByRole("heading", { name: "Add to Slack", exact: true })).toBeVisible();
+  });
   test("Slack: automatic creation survives refresh, consent, and connection evidence without copying durable secrets", async ({ page }) => {
     const slack = PROVIDERS.find(provider => provider.provider === "slack")!;
     const mock = await installChatControlPlaneMock(page, slack, seed, { enableChatConnectors: true, automaticSlack: true });
