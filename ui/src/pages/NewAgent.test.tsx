@@ -200,6 +200,33 @@ afterEach(async () => {
   container.remove();
 });
 describe("New agent setup", () => {
+  it("uses automatic Codex resolution through setup and hire without the experimental gate", async () => {
+    settings.getExperimental.mockResolvedValue({ enableNativeRunner: false });
+    await render("codex_local");
+    await connect("OpenAI");
+    await click("Finish setup");
+    expect(api.hire.mock.calls[0][1].adapterType).toBe("codex_local");
+    expect(api.hire.mock.calls[0][1]).not.toHaveProperty("runner");
+    expect(api.testEnvironment.mock.calls[0][1]).toBe("codex_local");
+    expect(api.testEnvironment.mock.calls[0][2]).not.toHaveProperty("runner");
+    expect(api.hire.mock.calls[0][1].adapterConfig.dangerouslyBypassApprovalsAndSandbox).not.toBe(true);
+  });
+
+  it("allows the explicit legacy override before authentication and rechecks it after a runner change", async () => {
+    state.adapters = (state.adapters as any[]).map(adapter => adapter.type === "codex_local" ? { ...adapter, supportedRunners: ["paperclip", "legacy"], defaultRunner: "paperclip" } : adapter);
+    await render("codex_local");
+    await act(async () => (container.querySelector("summary") as HTMLElement).click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Runner"]')!.click());
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(option => option.textContent === "Legacy runner")!.click());
+    await connect("OpenAI");
+    expect(api.testEnvironment.mock.calls[0][2].runner).toBe("legacy");
+    await act(async () => (container.querySelector("summary") as HTMLElement).click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Runner"]')!.click());
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(option => option.textContent === "Paperclip Runner (default)")!.click());
+    await click("Finish setup");
+    expect(api.testEnvironment).toHaveBeenLastCalledWith("company-1", "codex_local", expect.objectContaining({ runner: "paperclip" }));
+    expect(api.hire.mock.calls[0][1]).toMatchObject({ adapterType: "codex_local", runner: "paperclip" });
+  });
   it("creates Dot through its independent choice without CLI or model setup, then routes to pairing", async () => {
     settings.getExperimental.mockResolvedValue({ enableNativeRunner: false, enableOpenAiDot: true, enablePublicMcp: true });
     await render("paperclip_runner", "openai_dot");
@@ -294,10 +321,10 @@ describe("New agent setup", () => {
     await click("Finish setup");
     expect(api.hire.mock.calls[0][1].defaultEnvironmentId).toBe("grok-sandbox");
   });
-  it.each([false, true])("blocks direct runner setup links when the experiment is disabled (cloud=%s)", async (cloud) => {
+  it.each([false, true])("keeps non-Codex runner setup links gated when the experiment is disabled (cloud=%s)", async (cloud) => {
     cache.setQueryData(queryKeys.health, { status: "ok", cloud: { managed: cloud } });
     settings.getExperimental.mockResolvedValue({ enableNativeRunner: false });
-    await render("paperclip_runner");
+    await render("paperclip_runner", "claude");
     expect(container.textContent).toContain("This adapter is unavailable");
     expect(api.hire).not.toHaveBeenCalled();
   });
@@ -725,7 +752,10 @@ describe("New agent setup", () => {
       else await fill("Model", "openrouter/anthropic/claude-sonnet-4.6");
       await click("Finish setup");
       const config = api.hire.mock.calls[0][1].adapterConfig;
-      expect(config.provider).toBe(runner === "claude" ? "acpx" : runner);
+      if (runner === "codex") {
+        expect(api.hire.mock.calls[0][1]).toMatchObject({ adapterType: "codex_local", runner: "paperclip" });
+        expect(api.testEnvironment).toHaveBeenCalledWith("company-1", "codex_local", expect.objectContaining({ runner: "paperclip" }));
+      } else expect(config.provider).toBe(runner === "claude" ? "acpx" : runner);
       if (runner === "claude") {
         expect(config.acpxAgent).toBe("claude");
         expect(config.model).toMatch(/^claude-/);

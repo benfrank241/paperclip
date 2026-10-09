@@ -93,6 +93,11 @@ export async function setupFirstTaskFixtures(input: {
     exact: true,
   });
   const savedKey = page.getByRole("combobox", { name: "Saved API key" });
+  if (execution.profile.id === "legacy-codex") {
+    await page.getByText("Advanced", { exact: true }).click();
+    await page.getByRole("button", { name: "Runner", exact: true }).click();
+    await page.getByRole("option", { name: "Legacy runner", exact: true }).click();
+  }
   // Credential mode depends on the selected provider and its asynchronous key lookup.
   await expect(savedKey.or(useKey).first()).toBeVisible();
   if (await useKey.isVisible()) await useKey.click();
@@ -110,16 +115,22 @@ export async function setupFirstTaskFixtures(input: {
   expect(agents).toHaveLength(1);
   const wizardAdapter =
     execution.profile.credential === "OPENAI_API_KEY"
-      ? "codex_local"
+      ? execution.profile.id === "runner-codex" ? "paperclip_runner" : "codex_local"
       : "claude_local";
   expect(agents[0].adapterType).toBe(wizardAdapter);
+  if (execution.profile.id === "runner-codex") {
+    expect(agents[0].adapterConfig?.provider).toBe("codex");
+  }
   fixtures.onboardingRuntime = {
     mode: "production-wizard",
     originalAdapterType: wizardAdapter,
     testedAdapterType: wizardAdapter,
     originalModel: agents[0].adapterConfig?.model ?? null,
   };
-  if (execution.profile.generation === "native") {
+  // Claude remains an explicit native regression path in this Codex-only
+  // rollout. Codex is never switched after onboarding: the saved default is
+  // the execution under test.
+  if (execution.profile.id === "runner-acpx-claude") {
     const runtimePatch = firstTaskNativeRuntimePatch(
       execution,
       fixtures,

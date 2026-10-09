@@ -1,5 +1,7 @@
 import { cancellationRequestId } from "../services/native-runtime/native-cancellation-request.js";
 import { aiRoutingHarness } from "@paperclipai/shared";
+import { agentHarnessType, type AgentRunnerChoice } from "@paperclipai/shared";
+import { resolveNewAgentRunnerForCompany } from "../services/agent-runner-selection.js";
 import { agentIdentityService } from "../services/agent-identity.js";
 import { aiConnectionRouterService, poolMemberRuntimeConfig } from "../services/ai-connection-router.js";
 import { connectionIntentService } from "../services/connection-intents.js";
@@ -2243,7 +2245,7 @@ export function agentRoutes(
           "OpenAI Dot is experimental and disabled on this instance.",
           { code: "paperclip_runner_dot_disabled" },
         );
-      } else if (experimental.enableNativeRunner !== true) {
+      } else if (!([undefined, "codex"].includes(asRecord(config)?.provider as string | undefined)) && experimental.enableNativeRunner !== true) {
         throw unprocessable(
           "Paperclip Runner is experimental and disabled on this instance.",
           { code: "paperclip_runner_rollout_disabled" },
@@ -2594,7 +2596,7 @@ export function agentRoutes(
     adapterType: string | null | undefined,
     adapterConfig: Record<string, unknown>,
   ): Record<string, unknown> {
-    if (adapterType !== "codex_local") return adapterConfig;
+    if (agentHarnessType(adapterType ?? "", adapterConfig) !== "codex_local") return adapterConfig;
     const existingEnv = asRecord(adapterConfig.env);
     if (!existingEnv) return adapterConfig;
     if (!codexLocalEnvKeyConfigured(existingEnv.OPENAI_API_KEY)) return adapterConfig;
@@ -2645,11 +2647,12 @@ export function agentRoutes(
     const noInheritance = { adapterConfig, inheritedFixedClaudeOAuthBinding: false };
     if (asRecord(runtimeConfig)?.aiConnection) return noInheritance;
     if (req.actor.type !== "agent" || !req.actor.agentId) return noInheritance;
-    const credentialKeys = adapterType ? INHERITABLE_AGENT_CREDENTIAL_ENV_KEYS[adapterType] : undefined;
+    const harness = agentHarnessType(adapterType ?? "", adapterConfig) === "codex_local" ? "codex_local" : adapterType ?? "";
+    const credentialKeys = INHERITABLE_AGENT_CREDENTIAL_ENV_KEYS[harness];
     if (!credentialKeys) return noInheritance;
 
     const parent = await svc.getById(req.actor.agentId);
-    if (!parent || parent.companyId !== companyId || parent.adapterType !== adapterType) return noInheritance;
+    if (!parent || parent.companyId !== companyId || (harness === "codex_local" ? agentHarnessType(parent.adapterType, parent.adapterConfig) !== harness : parent.adapterType !== adapterType)) return noInheritance;
     // Managed parents must not pass stale legacy credential references to hires.
     if (aiRuntimeConnectionBindingSchema.safeParse(parent.runtimeConfig.aiConnection).success) return noInheritance;
     const parentEnv = asRecord(asRecord(parent.adapterConfig)?.env);
@@ -3451,7 +3454,9 @@ export function agentRoutes(
 
   async function testManagedEnvironment(adapterType: string, context: Parameters<ReturnType<typeof requireServerAdapter>["testEnvironment"]>[0], binding: AiConnectionBinding, managed: Awaited<ReturnType<typeof prepareManagedAiRuntime>>, agentId?: string) {
     const startedAt = new Date();
-    const result = await probeManagedEnvironment(adapterType, context, binding);
+    const managedAiCredentialHome = adapterType === "paperclip_runner" && context.config.provider === "codex" && managed.home
+      ? path.join(managed.home, "provider") : undefined;
+    const result = await probeManagedEnvironment(adapterType, { ...context, ...(managedAiCredentialHome ? { managedAiCredentialHome } : {}) }, binding);
     // A provider rejection invalidates the tested credential generation. A
     // missing CLI, unavailable environment, or other runtime error does not.
     if (result.status === "fail" && result.checks.some(check =>
@@ -3577,10 +3582,8 @@ export function agentRoutes(
     validate(testAdapterEnvironmentSchema),
     async (req, res) => {
       const companyId = req.params.companyId as string;
-      const type = assertKnownAdapterType(req.params.type as string);
+      let type = assertKnownAdapterType(req.params.type as string);
       await assertCanCreateAgentsForCompany(req, companyId);
-
-      const adapter = requireServerAdapter(type);
 
       const requestedBinding = req.body.aiConnection ? aiRuntimeConnectionBindingSchema.parse(req.body.aiConnection) : undefined;
       const aiBinding = requestedBinding?.mode === "router" ? undefined : requestedBinding;
@@ -3596,11 +3599,6 @@ export function agentRoutes(
         await assertCanUpdateAgent(req, savedAgent);
       }
       const poolBinding = requestedBinding ?? (savedAgent?.runtimeConfig?.aiConnection ? aiRuntimeConnectionBindingSchema.parse(savedAgent.runtimeConfig.aiConnection) : undefined);
-      if (poolBinding?.mode === "router") {
-        await validateManagedAgentBinding(req, companyId, savedAgentId ?? "", type, req.body.adapterConfig ?? {}, poolBinding, req.body.environmentId, false, !savedAgentId);
-        res.json({ adapterType: type, status: "warn", testedAt: new Date().toISOString(), checks: [{ code: "ai_connection_pool_task_test_required", level: "warn", message: "Pool configuration is available. Run a task to verify the selected account and harness; this preview does not allocate a task or contact a provider." }] });
-        return;
-      }
       const requestedEnvironmentId = await resolveAdapterTestEnvironmentId(
         companyId,
         // Omission tests the saved selection. Explicit null tests a prospective
@@ -3639,6 +3637,20 @@ export function agentRoutes(
         adapterConfigForTest = canRestoreEnv
           ? restoreRedactedAgentEnv(inputAdapterConfig, savedAgent.adapterConfig)
           : inputAdapterConfig;
+      }
+      const selection = await resolveNewAgentRunnerForCompany(db, companyId, {
+        adapterType: type, adapterConfig: adapterConfigForTest,
+        runner: req.body.runner ?? (savedAgent && savedAgent.adapterType === type ? (type === "paperclip_runner" ? undefined : "legacy") : undefined),
+        defaultEnvironmentId: requestedEnvironmentId,
+      });
+      type = selection.adapterType;
+      adapterConfigForTest = selection.adapterConfig;
+      const adapter = requireServerAdapter(type);
+      if (!savedAgent || req.body.runner !== undefined || type !== savedAgent.adapterType) await assertSelectableAdapterType(type, adapterConfigForTest);
+      if (poolBinding?.mode === "router") {
+        await validateManagedAgentBinding(req, companyId, savedAgentId ?? "", type, adapterConfigForTest, poolBinding, requestedEnvironmentId, false, !savedAgentId);
+        res.json({ adapterType: type, status: "warn", testedAt: new Date().toISOString(), checks: [{ code: "ai_connection_pool_task_test_required", level: "warn", message: "Pool configuration is available. Run a task to verify the selected account and harness; this preview does not allocate a task or contact a provider." }] });
+        return;
       }
       if (type === "paperclip_runner" && inputAdapterConfig.provider === "openai_dot") {
         const dotEnabled = await dotRunnerBroker(db).enabled();
@@ -4690,6 +4702,7 @@ export function agentRoutes(
       onboardingFirstAgent: hireOnboardingFirstAgent,
       // This intent flag is consumed below and must never reach agent create.
       inheritRuntimeFrom,
+      runner: hireRunner,
       ...hireInput
     } = req.body;
 
@@ -4715,6 +4728,8 @@ export function agentRoutes(
       hireInput.adapterConfig = inheritNativeRunnerAdapterConfig(caller.adapterConfig);
       hireInput.defaultEnvironmentId = caller.defaultEnvironmentId ?? null;
     }
+    if (inheritRuntimeFrom === "caller" && hireRunner !== undefined) throw unprocessable("inheritRuntimeFrom=caller cannot be combined with runner");
+    Object.assign(hireInput, await resolveNewAgentRunnerForCompany(db, companyId, { ...hireInput, runner: hireRunner }));
     hireInput.adapterType = await assertSelectableAdapterType(hireInput.adapterType, hireInput.adapterConfig);
     const rawHireAdapterConfig = (hireInput.adapterConfig ?? {}) as Record<string, unknown>;
     assertProviderTraceSettingTransition(req, hireInput.runtimeConfig);
@@ -4845,6 +4860,7 @@ export function agentRoutes(
         },
         {
           createdByUserId: req.actor.type === "board" ? req.actor.userId : null,
+          runnerResolved: true,
           aiConnectionInstall: managedHireConnection ? { ...managedHireConnection, createdByUserId: responsibleUserForAiRequest(req) } : undefined,
           claudeLogin: {
             storedSessionId: hireStoredSessionId ?? null,
@@ -5026,8 +5042,10 @@ export function agentRoutes(
       // The onboarding marker is not an agent column. The server consumes it to
       // seed the chief-of-staff persona; it never reaches the insert values.
       onboardingFirstAgent: createOnboardingFirstAgent,
+      runner: createRunner,
       ...createInput
     } = req.body;
+    Object.assign(createInput, await resolveNewAgentRunnerForCompany(db, companyId, { ...createInput, runner: createRunner }));
     createInput.adapterType = await assertSelectableAdapterType(createInput.adapterType, createInput.adapterConfig);
     const rawCreateAdapterConfig = (createInput.adapterConfig ?? {}) as Record<string, unknown>;
     assertProviderTraceSettingTransition(req, createInput.runtimeConfig);
@@ -5101,6 +5119,7 @@ export function agentRoutes(
       },
       {
         createdByUserId: req.actor.type === "board" ? req.actor.userId : null,
+        runnerResolved: true,
         aiConnectionInstall: managedConnection ? { ...managedConnection, createdByUserId: responsibleUserForAiRequest(req) } : undefined,
         claudeLogin: {
           storedSessionId: createStoredSessionId ?? null,
@@ -5643,6 +5662,8 @@ export function agentRoutes(
     }
 
     const patchData = { ...(req.body as Record<string, unknown>) };
+    const runner = patchData.runner as AgentRunnerChoice | undefined;
+    delete patchData.runner;
     const replaceAdapterConfig = patchData.replaceAdapterConfig === true;
     delete patchData.replaceAdapterConfig;
     // The apply-existing flag is not an agent column. The server binds the fixed
@@ -5668,6 +5689,15 @@ export function agentRoutes(
     // it gets the selectable check; keeping the agent's current adapter (even
     // one since disabled) stays allowed, so a disabled harness does not make an
     // existing agent uneditable.
+    if (runner !== undefined) {
+      await assertCanUpdateAgent(req, existing);
+      const config = hasOwn(patchData, "adapterConfig") ? { ...(replaceAdapterConfig ? {} : existing.adapterConfig), ...asRecord(patchData.adapterConfig) } : existing.adapterConfig;
+      Object.assign(patchData, await resolveNewAgentRunnerForCompany(db, existing.companyId, {
+        adapterType: typeof patchData.adapterType === "string" ? patchData.adapterType : existing.adapterType,
+        adapterConfig: config, runner,
+        defaultEnvironmentId: hasOwn(patchData, "defaultEnvironmentId") ? patchData.defaultEnvironmentId as string | null : existing.defaultEnvironmentId,
+      }));
+    }
     const nextAdapterType = hasOwn(patchData, "adapterType")
       ? assertKnownAdapterType(patchData.adapterType as string | null | undefined)
       : existing.adapterType;

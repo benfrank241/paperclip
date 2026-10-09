@@ -57,7 +57,7 @@ export function AgentBasicsDialog({
   });
   const [name, setName] = useState("");
   const [adapterType, setAdapterType] = useState(initialAdapter);
-  const [runnerProvider, setRunnerProvider] = useState("codex");
+  const runnerProvider = "codex";
   const [step, setStep] = useState<"name" | "adapter">("name");
   const {
     data: adapters,
@@ -72,6 +72,7 @@ export function AgentBasicsDialog({
     (adapter) =>
       adapter.loaded &&
       !adapter.disabled &&
+      adapter.type !== "paperclip_runner" &&
       isNewAgentAdapterAllowed(adapter.type, {
         cloud,
         nativeRunnerEnabled: experimental.data?.enableNativeRunner === true,
@@ -211,23 +212,6 @@ export function AgentBasicsDialog({
                     );
                   })}
                 </div>
-                {validAdapter && adapterType === "paperclip_runner" && (
-                  <label className="flex flex-col gap-2 text-sm font-medium">
-                    Runner
-                    <select
-                      className="rounded-md border border-border bg-background px-3 py-2"
-                      value={runnerProvider}
-                      onChange={(event) =>
-                        setRunnerProvider(event.target.value)
-                      }
-                    >
-                      <option value="codex">Codex (app server)</option>
-                      <option value="claude">Claude (ACPX)</option>
-                      <option value="grok">Grok Build (ACPX)</option>
-                      <option value="opencode">OpenCode</option>
-                    </select>
-                  </label>
-                )}
               </fieldset>
             )}
           </div>

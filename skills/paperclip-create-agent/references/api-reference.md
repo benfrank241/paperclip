@@ -108,3 +108,15 @@ For hire approvals:
 - All actions are logged in activity for auditability.
 - Use markdown in issue/approval comments and include links to approval, agent, and source issue.
 - After approval resolution, requester may be woken with `PAPERCLIP_APPROVAL_ID` and should reconcile linked issues.
+
+## Codex execution choice
+
+Hire requests and direct creation can include `runner: "auto" | "paperclip" |
+"legacy"`. Omitted is automatic for new agents: `adapterType: "codex_local"`
+selects Paperclip Runner on supported targets; other harnesses keep their
+existing execution. Explicit `legacy` preserves Codex CLI execution. The server
+returns the resolved adapter and configuration, which are frozen for approval.
+Use those returned values for later edits; unrelated updates do not upgrade bots.
+
+CLI equivalents: `paperclipai agent create --runner legacy --payload-json ...`
+and `paperclipai agent hire --runner legacy --payload-json ...`.

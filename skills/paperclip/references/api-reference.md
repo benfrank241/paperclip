@@ -898,6 +898,13 @@ POST /api/companies/{companyId}/agent-hires
 }
 ```
 
+New hires can set `runner` to `auto`, `paperclip`, or `legacy`. Omitted means
+automatic: the Codex harness (`codex_local`) uses Paperclip Runner on supported
+targets, while other harness defaults stay unchanged. Use `legacy` for custom
+Codex CLI settings. The returned execution configuration is frozen for approval;
+existing agents do not change runners after unrelated edits. Caller inheritance
+continues to use the caller's validated runtime and credential restrictions.
+
 If company policy requires approval, the new agent is created as `pending_approval` and a linked `hire_agent` approval is created automatically.
 
 Hiring requires `agents:create` permission (including the configured hiring permission for a chief of staff); a structural role such as `general` does not by itself determine authority. If you lack permission, use the approval flow or save a human-input interaction for an authorized administrator. Do not bypass a permission denial.

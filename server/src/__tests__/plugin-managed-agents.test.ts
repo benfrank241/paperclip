@@ -283,8 +283,8 @@ describeEmbeddedPostgres("plugin-managed agents", () => {
         name: "Codex One",
         role: "engineer",
         status: "idle",
-        adapterType: "codex_local",
-        adapterConfig: {},
+        adapterType: "paperclip_runner",
+        adapterConfig: { provider: "codex", model: "gpt-5.4" },
         runtimeConfig: {},
         permissions: {},
       },
@@ -315,7 +315,9 @@ describeEmbeddedPostgres("plugin-managed agents", () => {
     const created = await services.agents.managedReconcile({ companyId, agentKey: "wiki-maintainer" });
 
     expect(created.status).toBe("created");
-    expect(created.agent?.adapterType).toBe("codex_local");
+    expect(created.agent).toMatchObject({ adapterType: "paperclip_runner", adapterConfig: { provider: "codex" } });
+    const reconciled = await services.agents.managedReconcile({ companyId, agentKey: "wiki-maintainer" });
+    expect(reconciled.agent?.adapterConfig).toEqual(created.agent?.adapterConfig);
   });
 
   it("materializes declared managed agent instructions with local folder paths", async () => {

@@ -3,6 +3,9 @@ import { AgentCharacter } from "../AgentCharacter";
 import { useAgentAppearanceDraft } from "../../hooks/useAgentAppearanceDraft";
 import { AiConnectionField, aiProviderForAdapter } from "../ai-connections/AiConnectionField";
 import type { AiConnectionBinding } from "@paperclipai/shared";
+import type { AgentRunnerChoice } from "@paperclipai/shared";
+import { CodexRunnerSelect } from "../CodexRunnerSelect";
+import { SelectPopover } from "../ui/select";
 import { DEFAULT_CODEX_LOCAL_MODEL } from "@paperclipai/adapter-codex-local";
 import {
   SETUP_CREDENTIAL_KEYS,
@@ -84,10 +87,11 @@ export function NewAgentSetup() {
     );
   return (
     <Setup
-      key={`${selectedCompanyId}:${params.get("name")}:${params.get("adapterType")}:${params.get("runnerProvider")}`}
+      key={`${selectedCompanyId}:${params.get("name")}:${params.get("adapterType")}:${params.get("runnerProvider")}:${params.get("runner")}`}
       companyId={selectedCompanyId}
       name={params.get("name") ?? ""}
-      adapterType={params.get("adapterType") ?? ""}
+      adapterType={params.get("adapterType") === "paperclip_runner" && (params.get("runnerProvider") ?? "codex") === "codex" ? "codex_local" : params.get("adapterType") ?? ""}
+      initialRunner={params.get("runner") ?? (params.get("adapterType") === "paperclip_runner" && (params.get("runnerProvider") ?? "codex") === "codex" ? "paperclip" : "auto")}
       runnerProvider={params.get("runnerProvider") ?? "codex"}
       createdAgentId={params.get("createdAgentId")}
     />
@@ -99,18 +103,21 @@ function Setup({
   name,
   adapterType,
   runnerProvider,
+  initialRunner,
   createdAgentId,
 }: {
   companyId: string;
   name: string;
   adapterType: string;
   runnerProvider: string;
+  initialRunner: string;
   createdAgentId: string | null;
 }) {
   const navigate = useNavigate();
   const cache = useQueryClient();
   const { openNewIssue } = useDialogActions();
   const appearanceDraft = useAgentAppearanceDraft(`${companyId}:new-agent`);
+  const [runner, setRunner] = useState<AgentRunnerChoice>(initialRunner === "legacy" || initialRunner === "paperclip" ? initialRunner : "auto");
   const isRunner = adapterType === "paperclip_runner";
   const isDot = isRunner && runnerProvider === "openai_dot";
   const brandType = isDot ? "openai_dot" : isRunner
@@ -120,7 +127,7 @@ function Setup({
       ? "claude_local"
       : runnerProvider === "opencode"
         ? "opencode_local"
-        : "codex_local"
+        : runnerProvider === "codex" ? "codex_local" : runnerProvider
     : adapterType;
   const connectionAdapter =
     brandType === "claude_local" || brandType === "codex_local" || brandType === "grok_local"
@@ -347,10 +354,11 @@ function Setup({
     const values = {
       ...defaultCreateValues,
       adapterType,
+      runner,
       model:
         model || (brandType === "codex_local" ? DEFAULT_CODEX_LOCAL_MODEL : ""),
       thinkingEffort: effort,
-      dangerouslyBypassSandbox: adapterType === "codex_local",
+      dangerouslyBypassSandbox: adapterType === "codex_local" && runner === "legacy",
       envBindings: nextConnection?.env ?? {},
       ...(isRunner
         ? {
@@ -449,6 +457,7 @@ function Setup({
         companyId,
         adapterType,
         providerAdapter: brandType,
+        ...(adapterType === "codex_local" && runner !== "auto" ? { runner } : {}),
         adapterConfig: config,
         testCredentials: pendingCredentials(nextConnection),
         aiConnection: runtimeAiBinding ?? nextConnection?.aiConnection,
@@ -492,6 +501,7 @@ function Setup({
     const staged: Array<{ remove: () => Promise<unknown> }> = [];
     let hired = false;
     try {
+      if (connectionAdapter && testState === "idle" && !(await runTest())) return;
       const config = preparedConfig();
       const credentials = pendingCredentials();
       // Untested entered keys must pass a probe before they can be stored.
@@ -520,6 +530,7 @@ function Setup({
         role: existing.length ? "general" : "ceo",
         ...(leader ? { reportsTo: leader.id } : {}),
         adapterType,
+        ...(adapterType === "codex_local" && runner !== "auto" ? { runner } : {}),
         adapterConfig: config,
         defaultEnvironmentId:
           environmentOverride ||
@@ -540,7 +551,7 @@ function Setup({
       appearanceDraft.clear();
       setScreen("saved");
       navigate(
-        `/agents/new?${new URLSearchParams({ name: response.agent.name, adapterType, runnerProvider, createdAgentId: response.agent.id })}`,
+        `/agents/new?${new URLSearchParams({ name: response.agent.name, adapterType, runnerProvider, ...(runner !== "auto" ? { runner } : {}), createdAgentId: response.agent.id })}`,
         { replace: true },
       );
       cache.setQueryData(
@@ -783,10 +794,16 @@ function Setup({
                       onConnected={(next) => {
                         setConnection(next);
                         setRuntimeAiBinding(undefined);
-                        resetTest();
                         setScreen("runtime");
                       }}
                     /> : <p role="status" className="text-sm text-muted-foreground">Loading connection settings…</p>}
+                    {adapterType === "codex_local" && <details className="mt-5 space-y-3">
+                      <summary className="cursor-pointer text-sm text-muted-foreground">Advanced</summary>
+                      <CodexRunnerSelect value={runner} disabled={busy}
+                        defaultRunner={adapters.data?.find(item => item.type === "codex_local")?.defaultRunner}
+                        supportedRunners={adapters.data?.find(item => item.type === "codex_local")?.supportedRunners}
+                        onChange={value => { setRunner(value); resetTest(); }} />
+                    </details>}
                   </OnboardingCard>
                 ) : screen === "saved" && created ? (
                   <div className="space-y-6">
@@ -866,7 +883,7 @@ function Setup({
                           <div className="grid items-start gap-5 sm:grid-cols-2">
                             {showModel && !usingKimiApi && (
                               <ModelDropdown
-                                presentation="native"
+                                presentation={brandType === "codex_local" ? "searchable" : "native"}
                                 models={connectionModels?.models ?? models.data ?? []}
                                 loadingModels={connectionModels?.isLoading ?? models.isLoading}
                                 onRefreshModels={connectionModels?.refreshModels}
@@ -904,7 +921,9 @@ function Setup({
                             )}
                             {efforts.length > 0 && (
                               <Field label="Thinking effort">
-                                <NativeSelect
+                                {brandType === "codex_local" ? <SelectPopover aria-label="Thinking effort" value={effort}
+                                  onValueChange={value => { setEffort(value); resetTest(); }}
+                                  options={[{ value: "", label: "Auto" }, ...efforts.map(value => ({ value, label: value }))]} /> : <NativeSelect
                                   aria-label="Thinking effort"
                                   value={effort}
                                   onChange={(event) => {
@@ -918,7 +937,7 @@ function Setup({
                                       {value}
                                     </option>
                                   ))}
-                                </NativeSelect>
+                                </NativeSelect>}
                               </Field>
                             )}
                           </div>
@@ -1128,6 +1147,13 @@ function Setup({
                             </Field>
                           </div>
                         )}
+                        {adapterType === "codex_local" && <details className="space-y-3">
+                          <summary className="cursor-pointer text-sm text-muted-foreground">Advanced</summary>
+                          <CodexRunnerSelect value={runner} disabled={busy}
+                            defaultRunner={adapters.data?.find(item => item.type === "codex_local")?.defaultRunner}
+                            supportedRunners={adapters.data?.find(item => item.type === "codex_local")?.supportedRunners}
+                            onChange={value => { setRunner(value); resetTest(); }} />
+                        </details>}
                       </section>
                       {!["cursor_cloud", "hermes_gateway"].includes(
                         adapterType,

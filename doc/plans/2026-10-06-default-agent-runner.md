@@ -1,6 +1,6 @@
 # Runner defaults: staged delivery
 
-Updated 2026-10-08.
+Updated 2026-10-09.
 
 ## Outcome and ownership
 
@@ -19,78 +19,102 @@ The user approved splitting that work into four useful steps:
 3. Claude defaults and authentication.
 4. The remaining supported harness defaults and provider-specific fixes.
 
-## Current slice
+## Completed prerequisite
 
-Canonical branch: `codex/runner-packaging-prerequisites`.
-Frozen master base: `1881894973a2b25838d8abed9bd8aeebc3af4441`.
-Canonical PR: [#15555](https://github.com/paperclipai/paperclip/pull/15555).
-Its [checks](https://github.com/paperclipai/paperclip/pull/15555/checks) and
-[commits](https://github.com/paperclipai/paperclip/pull/15555/commits) record the
-final candidate. Hosted results and review disposition belong to that exact
-candidate; earlier green checks do not qualify a later revision.
+[PR #15555](https://github.com/paperclipai/paperclip/pull/15555) merged at
+`6f9d0a56ba3c2f0059a723b7de434320eed7eb22`. Its final candidate `dde37d7`
+passed 47 ordinary CI jobs and fresh 5/5 automated review. The actual clean Linux
+npm consumer checked all 17 tarballs for absent Codex native payloads and official
+npm host dependencies. Actual Codex 0.156.1 startup passed on macOS ARM64.
+[Bot lockfile refresh #15673](https://github.com/paperclipai/paperclip/pull/15673)
+is merged. These checks did not qualify onboarding or cloud rollout.
 
-The user requested a smaller PR on 2026-10-08. This slice now covers Codex
-executable resolution, native-free npm packaging, the installed JavaScript
-dependency graph, and the sandbox resource lookup required by that npm layout.
-It retains focused tests and extends the existing public npm consumer verifier.
-It does not add a workflow, change Docker or Git installation, change shared
-login HOME or working-directory behavior, or transfer runner release assets.
-Agent defaults, saved runner choices, UI, schema, and provider qualification stay
-unchanged.
+Removed prerequisite work remains on `codex/runner-packaging-full-snapshot` at
+`6f3060beaa842ffcee21af058370d3cab5f571e9`. Do not restore its release workflows,
+Docker materialization, Git installer, or extra login isolation wholesale.
 
-The broader prerequisite implementation is preserved on the pushed branch
-`codex/runner-packaging-full-snapshot` at
-`6f3060beaa842ffcee21af058370d3cab5f571e9`. Its Git staging, extra login isolation,
-release pipeline, Docker materialization, and unrelated test-fixture changes
-remain outside this PR. Release and platform packaging must be qualified in a
-separate slice before enabling new-agent defaults.
+## Current slice: Codex defaults
 
-### Retained behavior
+Authorized 2026-10-09. Canonical branch: `codex/codex-runner-default`.
+Frozen master base: `4fb1ab53a` (includes both prerequisite merges).
+Canonical PR and tested revision: pending preparation.
+Preview: [isolated Codex QA](http://127.0.0.1:3124), normal dev supervisor,
+separate empty database. Current-head live evidence is pending the source freeze
+and verified binary provenance; older services and artifacts are not proof.
 
-Ordinary native Codex startup, direct evals, and browser login prefer the
-installed dependency. They accept usable older or newer CLI versions. If the
-dependency is absent, use the selected host's PATH. Explicit commands and recorded
-sessions retain precedence. Real protocol/login failures remain actionable;
-there is no silent runner fallback. Release pins and the separate ACPX artifact
-qualification stay unchanged. Linux ARM64 keeps its existing legacy login path.
+New Codex agents select Paperclip Runner on qualified Linux x64 targets. Users
+choose Codex, with Paperclip Runner or Legacy runner inside Advanced. Other
+harness defaults stay unchanged. Existing legacy/native agents and ordinary
+edits retain recorded execution; explicit runner changes use revisions/session
+invalidation. No database migration or permission-policy change.
 
-Final review found a relative PATH regression in the retained resolver. Resolve
-relative and empty PATH entries against the selected provider working directory;
-retain installed-dependency preference. Extend the existing fresh-process fixture
-and qualify the resulting commit separately from the green `cb5948e` candidate.
+Resolve before validation/auth/instructions/skills at the common creation
+boundary. Cover direct/API/CLI creation, onboarding seeds, hires, frozen
+approvals, built-ins, plugins, and import/export. Unsupported platforms or active
+external overrides retain legacy selection. Missing dependencies, invalid models,
+authentication failures, and incompatible settings remain actionable errors,
+without silently choosing another runner. Native Codex bypasses the experimental
+gate; other native providers retain their existing gate.
 
-Paperclip npm tarballs retain the patched JavaScript graph and strip Codex native
-payloads. The published server declares official optional host packages. npm
-installs them for the consumer's OS and architecture. This avoids collisions with
-the legacy adapter's separate Codex version. The server owns the bridge dependency
-used by its vendored runner. Sandbox reads remain confined to the selected native
-vendor resources; package identities and path containment still apply.
+Finish line: one narrow reviewable PR, affected regressions and required checks
+passing, useful Codex tasks plus follow-up and independently checked artifacts,
+onboarding and existing-agent preservation verified locally and on qualified
+managed staging, and inspectable evidence. Human merge and production deployment
+remain separate actions. Actual production composition remains a post-merge gate.
 
-Browser login keeps master's provider-specific credential directories, ambient
-HOME, and working directory. Only executable selection and safe errors change.
+## Coverage and execution ownership
 
-## Evidence and gates
+Reuse Product E2E profiles, fixtures, graders, reports, and installation checks.
+The `first-task` native Codex case now inspects the wizard's saved default directly
+with the experimental flag disabled. The legacy control selects its override
+before authentication. Each isolated onboarding company has a $5 task budget;
+setup probes require their own reserved allowance.
+Claude's explicit native fixture is unchanged until its later default PR.
 
-| Gate | Status | Evidence |
+| Area | Owner | Current state |
 | --- | --- | --- |
-| Preserve original and broader work | Passed | Pushed branches and revisions above |
-| Narrow scope against current master | Passed | Installed Codex/npm scope only; no workflow, Docker, Git installer, or unrelated fixture diff |
-| Focused packaging and installed-consumer controls | Passed | 24 packaging tests with actual offline npm tarballs; 9 existing consumer assertion tests |
-| Login controls after narrowing | Passed | 13 existing tests; HOME/config-directory/spawn semantics match frozen master |
-| Codex selection, protocol, sandbox, and ACPX integrity | Passed locally | 21 selection/security/transport/eval tests; 4 npm layout integrity controls; runner TypeScript no-emit |
-| Full checks and fresh review | Pending for relative PATH fix | `cb5948e` passed all 47 CI jobs and its clean Linux npm consumer; qualify the final fix with new CI and fresh 5/5 review |
-| Previous broad candidate | Historical | 47 ordinary CI jobs passed at `6f3060b`; not proof for the narrowed candidate |
-| Existing old CLI protocol proof | Historical | Official Codex 0.156.1 completed startup handshake; scope must be matched to retained sources |
-| All-harness live onboarding and cloud qualification | Deferred | Later defaults slices; authentication probes and CI cannot close live journeys |
+| Shared contract, server resolution, setup readiness | Core worker | 88 selection/setup, 39 route/artifact and 6 transport controls pass; server noemit passes; rebuilt daemon and Linux DB proof pending |
+| Production create/edit/onboarding UI and stories | UI worker | Implemented; 339 affected tests, UI typecheck and token gates pass; story evidence in progress |
+| Built-ins, plugins, approvals, imports/exports, CLI | Creation-path worker | Implemented; 102 portability, 8 approval, 3 CLI and 3 built-in unit checks pass; 72 DB checks require Linux |
+| Execution/dev gate, E2E gaps, packaging, live journeys | Lead | 28 runtime-selection and 122 onboarding/catalog support checks pass; actual journeys pending |
+| Full CI and final review | Lead | Run on frozen final candidate |
+| Local API/subscription task + follow-up | Lead | Credential/runtime identity inventory; unverified on this branch |
+| Managed staging API/subscription onboarding | Lead | Exact-source preview/artifact and budget qualification pending |
+| Shipped npm/Docker/cloud artifacts | Lead | Reuse existing hosted checks; prerequisite packaging proof is historical |
 
-Use Node 24 and one worker for focused local checks. Keep heavy builds in hosted
-CI. Do not build Docker images or Rust locally. Do not author a lockfile change.
-No provider-backed runs or new disposable environments are needed for this
-prerequisite slice. Incremental provider spend for narrowing is $0. The original
-$250 ceiling and cleanup obligations remain for later live qualification.
-Existing credentials and user previews remain untouched.
+Keep CPU-heavy Rust/Docker builds in hosted CI. Use Node 24, bounded workers,
+conservative provider turns/timeouts and existing QA accounts. Login interactions
+use the embedded browser. Do not change user preview services or production.
 
-Next action: commit and push the narrowed candidate, rerun its checks and fresh
-review, then update the PR and existing evidence report. Start the Codex-default
-slice after the user chooses to proceed. Merging and deployment remain outside
-this task.
+The original $250 ceiling remains. Historical receipts include unknown-charge
+reserves; the latest retained ledger holds $248.18 in costs/reservations and
+reports $1.82 unallocated, not a certified invoice balance. Reconcile unstarted
+reservations and current resource/credential state before paid runs. Do not reset
+the ceiling or treat missing charges as zero. No new paid call has run in this
+slice. Keep exact source/artifact/runtime identities and failed attempts in the
+existing report pipeline; mocks and passing CI do not close live acceptance.
+
+Integration found and fixed an import preservation gap: same-harness model edits
+must retain the package's explicit runner or the existing agent's runner. Native
+setup reuses production remote artifact preparation and verifies the actual
+app-server/model path; a version number alone does not reject installed Codex.
+Known unsupported local/SSH platforms retain legacy defaults. Sandbox support
+does not infer an image architecture; setup verifies its actual artifacts.
+
+Public package audit found flat Linux x64 daemons in current stable and canary
+server tarballs. Normal release builds stage only the build host's daemon; the
+multi-platform assembly helper has no release caller or macOS artifact producer.
+Automatic macOS/Windows/Linux ARM defaults therefore remain legacy in this slice.
+Existing explicit native agents remain usable with their installed runtime.
+macOS runner artifact assembly is a separate prerequisite for its default.
+Codex setup required three small Rust seams: read-only probes, observed model
+reporting, and reasoning effort. Old cached daemon bytes do not verify these.
+
+Local startup hit the macOS shared-memory ID limit. One detached 56-byte segment
+was released only after zero attachments and exited owners were verified. No
+running server or database file was changed. The separate QA server is healthy.
+
+Next action: finish core integration checks, commit and push the candidate,
+then run existing Linux CI/install checks and bounded actual journeys. Preserve
+failed attempts and costs. Unrelated findings and remaining harness qualification
+belong to later slices.

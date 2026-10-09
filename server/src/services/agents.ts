@@ -1,4 +1,6 @@
 import { budgetServiceInTransaction, deliverBudgetEnforcement, type BudgetServiceHooks } from "./budgets.js";
+import { resolveNewAgentRunnerForCompany } from "./agent-runner-selection.js";
+import type { AgentRunnerChoice } from "@paperclipai/shared";
 import { withAccountingTransaction } from "./accounting-transaction.js";
 import type { ActivityPublication } from "./activity-log.js";
 import { agentAppearanceSchema, randomAgentAppearance, resolveAgentAppearance, agentAvatarUrl } from "@paperclipai/shared";
@@ -136,6 +138,8 @@ interface UpdateAgentOptions {
 }
 
 interface CreateAgentOptions {
+  /** Reviewed/historical execution already resolved by a governed internal caller. */
+  runnerResolved?: boolean;
   createdByUserId?: string | null;
   aiConnectionInstall?: { connectionId: string; memberConnectionIds?: string[]; createdByUserId: string | null };
   allowBuiltInAgentMetadata?: boolean;
@@ -922,7 +926,12 @@ export function agentService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
 
     getById,
 
-    create: async (companyId: string, data: Omit<typeof agents.$inferInsert, "companyId">, options?: CreateAgentOptions) => {
+    create: async (companyId: string, input: Omit<typeof agents.$inferInsert, "companyId"> & { runner?: AgentRunnerChoice }, options?: CreateAgentOptions) => {
+      const { runner, ...data } = input;
+      const selection = options?.runnerResolved ? { adapterType: data.adapterType ?? "process", adapterConfig: isPlainRecord(data.adapterConfig) ? data.adapterConfig : {} }
+        : await resolveNewAgentRunnerForCompany(db, companyId, { ...data, adapterConfig: isPlainRecord(data.adapterConfig) ? data.adapterConfig : {}, runner });
+      data.adapterType = selection.adapterType;
+      data.adapterConfig = selection.adapterConfig;
       if (data.appearance?.customAvatarAssetId) throw unprocessable("Create the agent before uploading its avatar");
       assertBuiltInAgentMetadataMutationAllowed(null, data.metadata, options);
       if (data.reportsTo) {

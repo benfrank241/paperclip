@@ -870,10 +870,12 @@ for (const execution of executions) {
         const receipt = verifyStockHarnessPreflight(process.env[STOCK_PREFLIGHT_ENV]);
         await writeSanitizedJson(snapshotsDir, "stock-harness-preflight.json", receipt, secrets);
       }
+      // Codex default journeys must work with the experimental gate disabled.
+      const nativeRolloutEnabled = execution.profile.provider !== "codex";
       const experimental = await api.patch<{
         enableNativeRunner: boolean;
       }>("/api/instance/settings/experimental", {
-        enableNativeRunner: true,
+        enableNativeRunner: nativeRolloutEnabled,
         ...(["warm_three_turn", "everyday_workflow"].includes(execution.task.flow)
           ? { enableIsolatedWorkspaces: true }
           : {}),
@@ -882,7 +884,7 @@ for (const execution of executions) {
           ? { enableRunnerPreviewIngress: true }
           : {}),
       });
-      expect(experimental.enableNativeRunner).toBe(true);
+      expect(experimental.enableNativeRunner).toBe(nativeRolloutEnabled);
 
       if (execution.suite.id === "extended-harnesses" && execution.profile.qualificationCandidate === "pi" && execution.task.id === "file-edit-validate") {
         piFileSeed = await seedPiFile(workspacePath, nonce);

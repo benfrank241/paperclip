@@ -36,7 +36,7 @@ import {
   parseAgentDetailView,
   type AgentLocalDetailView,
 } from "@/pages/agent-detail-navigation";
-import { getAdapterDisplay } from "@/adapters/adapter-display-registry";
+import { agentDisplayAdapterType, getAdapterDisplay } from "@/adapters/adapter-display-registry";
 import { cn } from "@/lib/utils";
 import { RuntimeTestCard } from "../RuntimeTestCard";
 import { type TestOutcome } from "../new-agent-fixtures";
@@ -216,7 +216,8 @@ function SettingsPage({ runtimeContent }: { runtimeContent?: ReactNode }) {
       : AGENT_DETAIL_NAVIGATION.flatMap((s) => s.items).find(
           (t) => t.value === view,
         )?.label;
-  const display = getAdapterDisplay(agent.adapterType);
+  const displayType = agentDisplayAdapterType(agent);
+  const display = getAdapterDisplay(displayType);
   const Icon = display.icon;
   const callbacks = {
     onDirtyChange: onDirty,
@@ -295,10 +296,10 @@ function SettingsPage({ runtimeContent }: { runtimeContent?: ReactNode }) {
                     {agent.name}
                   </h1>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    {agent.adapterType === "claude_local" ||
-                    agent.adapterType === "codex_local" ? (
+                    {displayType === "claude_local" ||
+                    displayType === "codex_local" ? (
                       <img
-                        src={`/brands/${agent.adapterType === "claude_local" ? "claude" : "codex"}-color.svg`}
+                        src={`/brands/${displayType === "claude_local" ? "claude" : "codex"}-color.svg`}
                         className="size-4"
                         alt=""
                       />

@@ -57,6 +57,7 @@ it("does not report a connection when runtime readiness passes but provider auth
     {
       agentId: "agent-1",
       environmentId: "sandbox-1",
+      runner: "legacy",
       adapterConfig: { ...input.adapterConfig, engine: "cli" },
     },
   );
@@ -73,7 +74,7 @@ it("probes native Grok credentials with the pinned prerequisite in the selected 
     adapterConfig: { provider: "acpx", acpxAgent: "grok", model: "grok-4.7" },
   });
   expect(testEnvironment).toHaveBeenLastCalledWith("company-1", "grok_local", {
-    agentId: "agent-1", environmentId: "sandbox-1",
+    agentId: "agent-1", environmentId: "sandbox-1", runner: "legacy",
     adapterConfig: { provider: "acpx", acpxAgent: "grok", model: "grok-4.7", engine: "cli", command: "/opt/paperclip/providers/grok/1.0.13/grok" },
   });
   expect(result.checks.some((check) => check.code === "grok_hello_probe_passed")).toBe(true);
@@ -97,4 +98,12 @@ it("preserves runtime warnings after a successful provider request", async () =>
     .mockResolvedValueOnce({ ...ready, status: "warn" })
     .mockResolvedValueOnce(ready);
   expect((await testAgentSetup(input)).status).toBe("warn");
+});
+
+it("keeps the resolved native identity and explicitly bounds the supplementary Codex CLI probe to legacy", async () => {
+  testEnvironment.mockResolvedValueOnce(ready).mockResolvedValueOnce({ ...ready, adapterType: "codex_local" });
+  const result = await testAgentSetup({ ...input, adapterType: "codex_local", providerAdapter: "codex_local", runner: "paperclip" });
+  expect(result.adapterType).toBe("paperclip_runner");
+  expect(testEnvironment.mock.calls[0][2].runner).toBe("paperclip");
+  expect(testEnvironment.mock.calls[1][2].runner).toBe("legacy");
 });

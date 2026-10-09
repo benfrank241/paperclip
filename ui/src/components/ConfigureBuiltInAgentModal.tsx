@@ -1,4 +1,7 @@
 import { useMemo, useState } from "react";
+import { agentHarnessType, agentRunner, type AgentRunnerChoice } from "@paperclipai/shared";
+import { adaptersApi } from "@/api/adapters";
+import { CodexRunnerSelect } from "./CodexRunnerSelect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -65,8 +68,11 @@ export function ConfigureBuiltInAgentModal({
   const { definition } = state;
 
   const [adapterType, setAdapterType] = useState<string>(
-    () => state.agent?.adapterType ?? defaultAdapterType(state),
+    () => state.agent && agentHarnessType(state.agent.adapterType, state.agent.adapterConfig) === "codex_local" ? "codex_local" : state.agent?.adapterType ?? defaultAdapterType(state),
   );
+  const [runner, setRunner] = useState<AgentRunnerChoice | undefined>();
+  const adapters = useQuery({ queryKey: queryKeys.adapters.all, queryFn: adaptersApi.list, enabled: open });
+  const codexAvailability = adapters.data?.find(item => item.type === "codex_local");
   const [model, setModel] = useState<string>(() => {
     const config = state.agent?.adapterConfig;
     const configuredModel = typeof config === "object" && config !== null
@@ -128,7 +134,8 @@ export function ConfigureBuiltInAgentModal({
       const adapterConfig: Record<string, unknown> = {};
       if (model.trim()) adapterConfig.model = model.trim();
       const result = await builtInAgentsApi.provision(companyId, definition.key, {
-        adapterType,
+        adapterType: state.agent && agentHarnessType(state.agent.adapterType, state.agent.adapterConfig) === adapterType ? state.agent.adapterType : adapterType,
+        ...(adapterType === "codex_local" && runner !== undefined ? { runner } : {}),
         adapterConfig,
         ...(budgetMonthlyCents !== undefined ? { budgetMonthlyCents } : {}),
       });
@@ -163,16 +170,24 @@ export function ConfigureBuiltInAgentModal({
             board.
           </InlineBanner>
 
-          <Field label="Adapter type">
+          <Field label="Harness">
             <AdapterTypeDropdown
               value={adapterType}
               onChange={(next) => {
                 setAdapterType(next);
                 setModel("");
+                setRunner(undefined);
               }}
               disabledTypes={disabledTypes}
             />
           </Field>
+
+          {adapterType === "codex_local" && <details className="space-y-3">
+            <summary className="cursor-pointer text-sm text-muted-foreground">Advanced</summary>
+            <CodexRunnerSelect value={runner ?? (state.agent ? agentRunner(state.agent.adapterType) : "auto")}
+              defaultRunner={codexAvailability?.defaultRunner} supportedRunners={codexAvailability?.supportedRunners}
+              onChange={setRunner} />
+          </details>}
 
           {modelRequired && (
             // ModelDropdown supplies its own "Model" Field label + hint.

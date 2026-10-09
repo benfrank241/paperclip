@@ -52,6 +52,8 @@ import { isCloudManagedInstance } from "../services/cloud-instance.js";
 import { getHiddenSettings } from "../services/settings-visibility.js";
 import { assertBoardOrgAccess, assertInstanceAdmin } from "./authz.js";
 import { BUILTIN_ADAPTER_TYPES } from "../adapters/builtin-adapter-types.js";
+import { agentRunnerAvailability } from "../services/agent-runner-selection.js";
+import type { AgentRunnerAvailability } from "@paperclipai/shared";
 
 const execFileAsync = promisify(execFile);
 
@@ -123,7 +125,7 @@ interface AdapterCapabilities {
   login?: AdapterLoginProjection;
 }
 
-interface AdapterInfo {
+interface AdapterInfo extends AgentRunnerAvailability {
   type: string;
   label: string;
   source: "builtin" | "external";
@@ -203,6 +205,7 @@ function buildAdapterInfo(adapter: ServerAdapterModule, externalRecord: AdapterP
     loaded: true, // If it's in the registry, it's loaded
     disabled: disabledSet.has(adapter.type),
     capabilities: buildAdapterCapabilities(adapter),
+    ...agentRunnerAvailability(adapter.type),
     ...(adapter.acp ? { acp: adapter.acp } : {}),
     overriddenBuiltin: externalRecord ? BUILTIN_ADAPTER_TYPES.has(adapter.type) : undefined,
     overridePaused: BUILTIN_ADAPTER_TYPES.has(adapter.type) ? isOverridePaused(adapter.type) : undefined,
@@ -281,11 +284,10 @@ export function adapterRoutes(options: {
       listAdapterPlugins().map((r) => [r.type, r]),
     );
     const disabledSet = new Set(getDisabledAdapterTypes());
-    const nativeRunnerEnabled = await options.getNativeRunnerEnabled?.().catch(() => false) ?? false;
-    const openAiDotEnabled = await options.getOpenAiDotEnabled?.().catch(() => false) ?? false;
     // One shared implementation, with independent provider rollouts. Explicit
     // adapter-admin disabling still applies to both choices.
-    if (!nativeRunnerEnabled && !openAiDotEnabled) disabledSet.add("paperclip_runner");
+    // Codex is generally available; the other native providers retain their
+    // provider-specific selection gates. Explicit adapter disabling still applies.
 
     const result: AdapterInfo[] = registeredAdapters.map((adapter) =>
       buildAdapterInfo(adapter, externalRecords.get(adapter.type), disabledSet),

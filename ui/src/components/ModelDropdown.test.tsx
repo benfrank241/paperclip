@@ -78,4 +78,15 @@ describe("ModelDropdown", () => {
 
     expect(shownModelIds()).toEqual(["openai/gpt-6-astra", "openai/gpt-6-sol"]);
   });
+
+  it("moves through model options with the same keyboard controls as the harness picker", () => {
+    renderOpenDropdown(curated, { preserveOrder: true });
+    const search = document.body.querySelector("input")!;
+    act(() => search.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
+    expect(document.activeElement?.textContent).toBe(curated[0].label);
+    act(() => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })));
+    expect(document.activeElement?.textContent).toBe(curated.at(-1)?.label);
+    act(() => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true })));
+    expect(document.activeElement?.textContent).toBe(curated[0].label);
+  });
 });

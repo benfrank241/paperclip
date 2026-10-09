@@ -162,9 +162,12 @@ function installStorybookApiFixtures() {
     if (url.pathname === "/api/instance/settings/experimental") {
       return Response.json(experimentalSettings());
     }
+    if (url.pathname === "/api/instance/settings/general") {
+      return Response.json(instanceGeneralSettingsSchema.parse({}));
+    }
 
     if (url.pathname === "/api/health") {
-      return Response.json({ deploymentMode: "authenticated", localAiLoginSupported: onboardingFixtureState.environments === "local" });
+      return Response.json({ status: "ok", deploymentMode: "authenticated", localAiLoginSupported: onboardingFixtureState.environments === "local" });
     }
 
     if (url.pathname === "/api/instance/settings") {
@@ -506,6 +509,8 @@ function installStorybookApiFixtures() {
         {
           type: "codex_local",
           label: "Codex",
+          supportedRunners: ["paperclip", "legacy"],
+          defaultRunner: "paperclip",
           source: "builtin",
           modelsCount: 3,
           loaded: true,

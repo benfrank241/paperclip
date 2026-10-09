@@ -695,9 +695,10 @@ Accept the card above and I write it. This task stays in review until then.`;
       (e) => e.suite.id === "first-task" && e.profile.id === "legacy-codex",
     )!;
     const get = vi.fn().mockResolvedValue([{ id: "local", driver: "local" }]);
+    const patch = vi.fn().mockResolvedValue({});
     const postSensitive = vi.fn().mockResolvedValue({ id: "encrypted-secret" });
     const fixtures = await provisionFirstTaskFixtures({
-      api: { get, postSensitive },
+      api: { get, patch, postSensitive },
       execution,
       nonce: "test",
       company: {
@@ -709,6 +710,9 @@ Accept the card above and I write it. This task stays in review until then.`;
     });
     expect(get).toHaveBeenCalledExactlyOnceWith(
       "/api/companies/ui-created-company/environments?driver=local",
+    );
+    expect(patch).toHaveBeenCalledExactlyOnceWith(
+      "/api/companies/ui-created-company", { budgetMonthlyCents: 500 },
     );
     expect(postSensitive).toHaveBeenCalledExactlyOnceWith(
       "/api/companies/ui-created-company/secrets",
@@ -723,7 +727,7 @@ Accept the card above and I write it. This task stays in review until then.`;
     expect(JSON.stringify(fixtures)).not.toContain("fixture-key");
     await expect(
       provisionFirstTaskFixtures({
-        api: { get, postSensitive },
+        api: { get, patch, postSensitive },
         execution,
         nonce: "test",
         company: fixtures.company,

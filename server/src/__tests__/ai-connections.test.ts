@@ -22,6 +22,8 @@ import { syncConnectionCredentialBindings } from "../services/connection-credent
 import * as codexAdapter from "@paperclipai/adapter-codex-local/server";
 import { WORKSPACE_RESTORE_LOCK_TIMEOUT_CODE } from "@paperclipai/adapter-utils/workspace-restore-merge";
 import * as executionTarget from "@paperclipai/adapter-utils/execution-target";
+import * as runnerProbe from "../vendor/paperclip-runner/index.js";
+import { testNativeRunnerAuthentication } from "../services/native-runtime/setup-readiness.js";
 import { prepareManagedAiRuntime, withManagedAiProbe, assertManagedAiProjectAuth, isAiConnectionBusy } from "../services/ai-connection-runtime.js";
 import { execute as executeGemini, testEnvironment as testGeminiEnvironment } from "@paperclipai/adapter-gemini-local/server";
 import { toolAccessService } from "../services/tool-access.js";
@@ -169,6 +171,39 @@ describe("managed AI connections", () => {
       expect(await service.credential(row)).toBe(auth("11"));
       expect(request).not.toHaveBeenCalled();
     } finally { release.resolve(); await Promise.allSettled([probing, refreshing]); lock?.mockRestore(); request.mockRestore(); }
+  });
+
+  it("persists native Codex setup's refreshed selected login without changing existing agents", async () => {
+    const owner = "native-codex-setup-refresh";
+    await db.insert(companyMemberships).values({ companyId, principalId: owner, principalType: "user", status: "active", membershipRole: "member" });
+    const auth = (hour: string) => JSON.stringify({ tokens: { account_id: owner, id_token: "identity", access_token: `access-${hour}`, refresh_token: `refresh-${hour}` }, last_refresh: `2026-09-10T${hour}:00:00Z` });
+    await service.save(companyId, owner, { provider: "openai", method: "subscription", ownership: "personal", name: owner, loginSessionId: "fixture", agentIds: [], allAgents: true }, auth("10"));
+    const [row] = await service.quotaAccounts(companyId, owner);
+    const [before] = await db.select({ adapterType: agents.adapterType, adapterConfig: agents.adapterConfig }).from(agents).where(eq(agents.id, agentId));
+    const probe = vi.spyOn(runnerProbe, "probeNativeRunnerEnvironment").mockImplementation(async input => {
+      expect(input.transportOptions?.sourceCodexHome).toContain("/provider");
+      expect(await readFile(path.join(input.transportOptions!.sourceCodexHome!, "auth.json"), "utf8")).toBe(auth("10"));
+      const providerHome = path.join(input.runtimeDirectory, "codex-home");
+      await fs.mkdir(providerHome, { mode: 0o700 });
+      const refreshedFile = path.join(providerHome, "auth.json");
+      await writeFile(refreshedFile, auth("11"), { mode: 0o600 });
+      await input.onCodexCredentialRefresh!(refreshedFile);
+      await input.onCleanupConfirmed!();
+      return { provider: "codex", providerDriver: "codex_app_server", effectiveModel: "gpt-5.6-sol", helloProbePassed: true };
+    });
+    let managedHome: string | undefined;
+    try {
+      const result = await withManagedAiProbe(db, { companyId, agentId, responsibleUserId: owner, adapterType: "paperclip_runner",
+        binding: { provider: "openai", method: "subscription", mode: "responsible_user" }, config: { provider: "codex" } }, async runtime => {
+        managedHome = runtime.home;
+        return testNativeRunnerAuthentication({ companyId, adapterType: "paperclip_runner", config: runtime.config, managedAiCredentialHome: path.join(runtime.home!, "provider") }, "codex", "gpt-5.6-sol");
+      });
+      expect(result.status).toBe("pass"); expect(probe).toHaveBeenCalledOnce();
+      expect(await service.credential(row)).toBe(auth("11"));
+      await expect(access(managedHome!)).rejects.toMatchObject({ code: "ENOENT" });
+      const [after] = await db.select({ adapterType: agents.adapterType, adapterConfig: agents.adapterConfig }).from(agents).where(eq(agents.id, agentId));
+      expect(after).toEqual(before);
+    } finally { probe.mockRestore(); }
   });
 
   it("rejects preparation when reconnect replaces the selected credential reference", async () => {

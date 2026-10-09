@@ -139,6 +139,7 @@ describe("approvalService resolution idempotency", () => {
       requestedByUserId,
       payload: {
         name: "New Agent",
+        adapterType: "codex_local",
         adapterConfig: {
           env: {
             API_KEY: {
@@ -159,9 +160,10 @@ describe("approvalService resolution idempotency", () => {
     expect(mockAgentService.create).toHaveBeenCalledWith(
       "company-1",
       expect.objectContaining({
+        adapterType: "codex_local",
         adapterConfig: approved.payload.adapterConfig,
       }),
-      { createdByUserId: expectedCreator },
+      { runnerResolved: true, createdByUserId: expectedCreator },
     );
   });
 });

@@ -143,6 +143,25 @@ describeEmbeddedPostgres("POST /api/companies/:companyId/onboarding-seed", () =>
     }
   });
 
+  it("uses the creation default for server-seeded Codex without changing the Claude fallback", async () => {
+    const previous = process.env.PAPERCLIP_ONBOARDING_SEED_ADAPTER_TYPE;
+    process.env.PAPERCLIP_ONBOARDING_SEED_ADAPTER_TYPE = "codex_local";
+    try {
+      const { companyId, app } = await seedCompany();
+      const response = await post(app, companyId, SEED);
+      expect(response.status).toBe(200);
+      const [agent] = await ctx.db.select().from(agents).where(eq(agents.companyId, companyId));
+      expect(agent).toMatchObject({ adapterType: "paperclip_runner", adapterConfig: { provider: "codex" } });
+      expect(agent?.adapterConfig).toMatchObject({ paperclipSkillSync: { desiredSkills: expect.arrayContaining(["paperclipai/paperclip/paperclip-create-agent"]) } });
+      expect((await post(app, companyId, SEED)).body.changed).toBe(false);
+      const [replayed] = await ctx.db.select().from(agents).where(eq(agents.companyId, companyId));
+      expect(replayed?.adapterConfig).toEqual(agent?.adapterConfig);
+    } finally {
+      if (previous === undefined) delete process.env.PAPERCLIP_ONBOARDING_SEED_ADAPTER_TYPE;
+      else process.env.PAPERCLIP_ONBOARDING_SEED_ADAPTER_TYPE = previous;
+    }
+  });
+
   it("is idempotent per revision — a replay creates no second agent or task", async () => {
     const { companyId, app } = await seedCompany();
 

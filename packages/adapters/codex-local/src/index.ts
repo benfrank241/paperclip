@@ -188,6 +188,8 @@ export const models = [
 
 export const agentConfigurationDoc = `# codex_local agent configuration
 
+New agents select this Codex harness with adapterType: codex_local. On supported targets, automatic selection stores adapterType: paperclip_runner with provider: codex. Other harness defaults are unchanged. Set the request-level runner: legacy to use this adapter's CLI execution and custom settings. Existing agents and reviewed pending hires retain their saved runner; runtime errors never silently switch runners.
+
 Adapter: codex_local
 
 Core fields:
