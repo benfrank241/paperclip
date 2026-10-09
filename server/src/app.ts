@@ -1196,6 +1196,7 @@ export async function createApp(
   const deliveryWork = createDeliveryWorkCoordinator({
     owner: db,
     canRun: () => !isWarmStandby() && !isIdleTaskDrainActive(),
+    canReconcile: () => !isWarmStandby(),
     onError: (err, queue) => logger.error({ err, queue }, "Delivery reconciliation failed"),
   });
   app.locals.deliveryWork = deliveryWork;

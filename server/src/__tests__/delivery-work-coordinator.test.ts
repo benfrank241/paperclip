@@ -16,13 +16,13 @@ function setup() {
     if (rejectCommit) throw new Error("lost commit reply");
     return result;
   } });
-  const canRun = vi.fn(() => true), onError = vi.fn();
-  const coordinator = createDeliveryWorkCoordinator({ owner, canRun, onError });
+  const canRun = vi.fn(() => true), canReconcile = vi.fn(() => false), onError = vi.fn();
+  const coordinator = createDeliveryWorkCoordinator({ owner, canRun, canReconcile, onError });
   coordinators.push(coordinator);
   const enqueue = (queue = DELIVERY_QUEUES.feedback as typeof DELIVERY_QUEUES[keyof typeof DELIVERY_QUEUES]) =>
     owner.transaction(tx => notifyDeliveryWork(tx, queue));
-  return { owner, canRun, onError, coordinator, enqueue, execute,
-    failCommit: () => { rejectCommit = true; outcome = "in progress"; }, settle: () => { outcome = "committed"; } };
+  return { owner, canRun, canReconcile, onError, coordinator, enqueue, execute,
+    failCommit: () => { rejectCommit = true; outcome = "in progress"; }, settle: (status = "committed") => { outcome = status; } };
 }
 function task() { return { retryMs: 5000, run: vi.fn(async () => {}), hasPending: vi.fn(async () => false) }; }
 
@@ -116,7 +116,39 @@ describe("delivery work coordinator", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(t.run).toHaveBeenCalledTimes(2);
   });
-  it("does not query during drain or standby and resumes when admission opens", async () => {
+  it("reconciles a rollback during idle drain and releases the empty-queue hold without dispatching", async () => {
+    const s = setup(), t = task();
+    await s.coordinator.register(DELIVERY_QUEUES.feedback, t).ready;
+    s.canRun.mockReturnValue(false);
+    s.canReconcile.mockReturnValue(true);
+    s.failCommit(); await expect(s.enqueue()).rejects.toThrow("lost commit reply");
+    await vi.advanceTimersByTimeAsync(1);
+    expect(idleWorkSnapshot().active).toBe(1);
+    expect(t.run).toHaveBeenCalledTimes(1);
+    s.settle("aborted");
+    await vi.advanceTimersByTimeAsync(5001);
+    expect(t.run).toHaveBeenCalledTimes(1);
+    expect(t.hasPending).toHaveBeenCalled();
+    expect(idleWorkSnapshot().active).toBe(0);
+    expect(s.coordinator.nextWakeAt()).toBeNull();
+  });
+  it("keeps committed pending work recoverable during drain without starting deliveries", async () => {
+    const s = setup(), t = task();
+    await s.coordinator.register(DELIVERY_QUEUES.feedback, t).ready;
+    s.canRun.mockReturnValue(false);
+    s.canReconcile.mockReturnValue(true);
+    t.hasPending.mockResolvedValue(true);
+    await s.enqueue();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(t.run).toHaveBeenCalledTimes(1);
+    expect(s.coordinator.nextWakeAt()).not.toBeNull();
+    s.canRun.mockReturnValue(true);
+    t.hasPending.mockResolvedValue(false);
+    await vi.advanceTimersByTimeAsync(5001);
+    expect(t.run).toHaveBeenCalledTimes(2);
+    expect(idleWorkSnapshot().active).toBe(0);
+  });
+  it("does not query during standby and resumes when admission opens", async () => {
     const s = setup(), t = task(); s.canRun.mockReturnValue(false);
     await s.coordinator.register(DELIVERY_QUEUES.toolAction, t).ready;
     await s.enqueue(DELIVERY_QUEUES.toolAction);

@@ -6,6 +6,9 @@ import { beginIdleTrackedWork } from "./task-admission.js";
 export function createDeliveryWorkCoordinator(input: {
   owner: object;
   canRun: () => boolean;
+  // Idle drain may reconcile admitted writes without dispatching new work.
+  // Warm standby can disable both operations.
+  canReconcile?: () => boolean;
   onError: (error: unknown, queue: DeliveryQueue) => void;
 }) {
   const scheduler = createWorkScheduler();
@@ -39,13 +42,13 @@ export function createDeliveryWorkCoordinator(input: {
         if (workerStopped || running) return;
         scheduler.cancel(queue);
         scheduledAt = null;
-        if (!input.canRun()) { schedule(task.retryMs); return; }
+        if (!input.canRun() && !(input.canReconcile?.() ?? false)) { schedule(task.retryMs); return; }
         dirty = false;
         const finish = beginIdleTrackedWork();
         const attempt = new AbortController();
         controller = attempt;
         running = Promise.resolve().then(() => reconcileDatabaseWork(input.owner, queue))
-          .then(() => workerStopped ? undefined : task.run(attempt.signal)).then(() => workerStopped ? false : task.hasPending()).then(pending => {
+          .then(() => workerStopped || !input.canRun() ? undefined : task.run(attempt.signal)).then(() => workerStopped ? false : task.hasPending()).then(pending => {
           if (pending || databaseWorkPending(input.owner, queue)) schedule(task.retryMs);
           else { finishIntent?.(); finishIntent = undefined; }
         }).catch(error => {

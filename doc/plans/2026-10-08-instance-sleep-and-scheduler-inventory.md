@@ -52,7 +52,9 @@ in-progress transaction. Committed, aborted, or aged-out XIDs can be discharged
 after scanning. A failed status query retains the hold and a retry deadline.
 
 The scheduler retains startup sweeps, retry deadlines while durable work exists,
-and retries after failures. There is no unconditional 60-second recovery pass.
+and retries after failures. Idle drain permits transaction and queue checks but
+does not start deliveries; warm standby suppresses both. There is no
+unconditional 60-second recovery pass.
 Feedback flushes remain serialized and cancellable, with a 30-second upload
 limit. Vote routes return after saving rather than waiting for upload. Tool
 receipts awaiting review or execution still retain their retry cadence.
