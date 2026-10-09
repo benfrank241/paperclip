@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import {
   activityLog,
@@ -120,6 +120,8 @@ describe("built-in agent asset loading", () => {
 describeEmbeddedPostgres("built-in agents", () => {
   let db!: ReturnType<typeof createDb>;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+  let runnerSelectionSpy: { mockRestore(): void } | undefined;
+  const runnerTarget = { driver: "local", platform: "linux", architecture: "x64" };
   const instructionOperator = { type: "board", userId: "local-board", source: "local_implicit" } as const;
   async function writeInstructionEntry(agent: { id: string; companyId: string }, entryFile: string, content: string) {
     const service = agentInstructionRevisionService(db);
@@ -136,7 +138,17 @@ describeEmbeddedPostgres("built-in agents", () => {
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
+  beforeEach(async () => {
+    // Exercise real runner policy on the qualified Linux release target.
+    runnerTarget.platform = "linux";
+    runnerTarget.architecture = "x64";
+    const selection = await import("../services/agent-runner-selection.js");
+    runnerSelectionSpy = vi.spyOn(selection, "resolveNewAgentRunnerForCompany").mockImplementation(async (_db, _companyId, input) =>
+      selection.resolveNewAgentRunner({ ...input, target: runnerTarget }));
+  });
+
   afterEach(async () => {
+    runnerSelectionSpy?.mockRestore();
     await db.delete(routineTriggers);
     await db.delete(routines);
     await db.delete(issueThreadInteractions);
@@ -287,6 +299,9 @@ describeEmbeddedPostgres("built-in agents", () => {
     await svc.ensure(companyId, "briefs", { budgetMonthlyCents: 200 });
     await reconcileBuiltInAgentsOnStartup(db);
     expect((await svc.get(companyId, "briefs")).agent?.adapterConfig).toEqual(switched.agent?.adapterConfig);
+    // A saved native profile remains editable on source-built macOS installs.
+    runnerTarget.platform = "darwin";
+    runnerTarget.architecture = "arm64";
     const edited = await svc.ensure(companyId, "briefs", { adapterType: "codex_local", adapterConfig: { model: "gpt-5.4" } });
     expect(edited.agent).toMatchObject({ adapterType: "paperclip_runner", adapterConfig: { provider: "codex", model: "gpt-5.4" } });
   });
@@ -295,6 +310,9 @@ describeEmbeddedPostgres("built-in agents", () => {
     const companyId = await seedCompany({ requireApproval: true });
     const result = await builtInAgentService(db).provision(companyId, "briefs", { adapterType: "codex_local", adapterConfig: { model: "gpt-5.4" } }, { requestedByUserId: "board-user" });
     expect(result.approval?.payload).toMatchObject({ adapterType: "paperclip_runner", adapterConfig: { provider: "codex", model: "gpt-5.4" } });
+    // Restart and approval activate the reviewed config even if eligibility changed.
+    runnerTarget.platform = "darwin";
+    runnerTarget.architecture = "arm64";
     await reconcileBuiltInAgentsOnStartup(db);
     await approvalService(db).approve(result.approval!.id, "board-user");
     const approved = await builtInAgentService(db).get(companyId, "briefs");

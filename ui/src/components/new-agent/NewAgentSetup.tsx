@@ -204,9 +204,9 @@ function Setup({
     resetTest();
     setScreen("connect");
   };
-  const adapters = useQuery({
+  const adapterInventory = useQuery({
     queryKey: queryKeys.adapters.all,
-    queryFn: adaptersApi.list,
+    queryFn: () => adaptersApi.list(),
   });
   const agents = useQuery({
     queryKey: queryKeys.agents.list(companyId),
@@ -279,6 +279,14 @@ function Setup({
         : "Could not resolve the environment.";
   }
   const environment = envs.data?.find((env) => env.id === environmentId);
+  const adapters = useQuery({
+    queryKey: queryKeys.adapters.availability(companyId, environmentId),
+    queryFn: () => adaptersApi.list({ companyId, environmentId }),
+  });
+  const defaultRunner = adapters.data?.find(adapter => adapter.type === "codex_local")?.defaultRunner;
+  useEffect(() => {
+    resetTest();
+  }, [companyId, environmentId, runner === "auto" ? defaultRunner : undefined]);
   const sandboxProvider =
     typeof environment?.config?.provider === "string"
       ? environment.config.provider
@@ -321,7 +329,7 @@ function Setup({
       openAiDotEnabled: experimental.data?.enableOpenAiDot === true,
       runnerProvider,
     }) &&
-    adapters.data?.some(
+    adapterInventory.data?.some(
       (adapter) =>
         adapter.type === adapterType &&
         adapter.loaded &&
@@ -330,6 +338,7 @@ function Setup({
     );
   const ready = Boolean(
     available &&
+    (adapterType !== "codex_local" || runner !== "auto" || Boolean(adapters.data)) &&
     !environmentError &&
     !envs.isPending &&
     !settings.isPending &&
@@ -646,6 +655,7 @@ function Setup({
           : "Local machine";
   const setupError =
     adapters.error ??
+    adapterInventory.error ??
     envs.error ??
     settings.error ??
     experimental.error ??
@@ -685,7 +695,7 @@ function Setup({
             {setupError.message}
           </p>
         )}
-        {adapters.data && !available && (
+        {adapterInventory.data && !available && (
           <p role="alert" className="text-sm text-destructive">
             This adapter is unavailable. Choose an enabled adapter.
           </p>
@@ -800,6 +810,7 @@ function Setup({
                     {adapterType === "codex_local" && <details className="mt-5 space-y-3">
                       <summary className="cursor-pointer text-sm text-muted-foreground">Advanced</summary>
                       <CodexRunnerSelect value={runner} disabled={busy}
+                        pending={adapters.isFetching} error={adapters.error?.message} onRetry={() => { void adapters.refetch(); }}
                         defaultRunner={adapters.data?.find(item => item.type === "codex_local")?.defaultRunner}
                         supportedRunners={adapters.data?.find(item => item.type === "codex_local")?.supportedRunners}
                         onChange={value => { setRunner(value); resetTest(); }} />
@@ -1150,6 +1161,7 @@ function Setup({
                         {adapterType === "codex_local" && <details className="space-y-3">
                           <summary className="cursor-pointer text-sm text-muted-foreground">Advanced</summary>
                           <CodexRunnerSelect value={runner} disabled={busy}
+                            pending={adapters.isFetching} error={adapters.error?.message} onRetry={() => { void adapters.refetch(); }}
                             defaultRunner={adapters.data?.find(item => item.type === "codex_local")?.defaultRunner}
                             supportedRunners={adapters.data?.find(item => item.type === "codex_local")?.supportedRunners}
                             onChange={value => { setRunner(value); resetTest(); }} />

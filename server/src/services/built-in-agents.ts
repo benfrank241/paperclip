@@ -1761,9 +1761,17 @@ export function builtInAgentService(db: Db) {
           && agentHarnessType(existing.adapterType, existing.adapterConfig) === "codex_local";
         const runner = resolvedInput.runner ?? (sameCodexHarness && existing.metadata?.paperclipBuiltInSetupRequired !== true
           ? agentRunner(existing.adapterType) : undefined);
+        const retainedNative = sameCodexHarness && runner === "paperclip" && existing.adapterType === "paperclip_runner";
+        const resolvedAdapterConfig = { ...adapterConfig };
+        if (retainedNative) {
+          for (const field of ["provider", "acpxAgent", "acpxMode"]) {
+            if (existing.adapterConfig[field] !== undefined) resolvedAdapterConfig[field] = existing.adapterConfig[field];
+          }
+        }
         Object.assign(patch, runner !== undefined || existing.metadata?.paperclipBuiltInSetupRequired === true
           ? await resolveNewAgentRunnerForCompany(db, companyId, {
-            adapterType, adapterConfig, runner,
+            adapterType: retainedNative ? existing.adapterType : adapterType,
+            adapterConfig: resolvedAdapterConfig, runner,
             defaultEnvironmentId: existing.defaultEnvironmentId,
           })
           : { adapterType, adapterConfig });

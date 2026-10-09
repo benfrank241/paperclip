@@ -6,7 +6,7 @@ vi.mock("./instance-settings.js", () => ({ instanceSettingsService: () => ({ get
 vi.mock("./environments.js", () => ({ environmentService: () => ({ getById: state.getEnvironment, listBoundCompanyIds: state.bindings, findManagedSandboxEnvironment: state.managedEnvironment, findKubernetesEnvironment: state.managedEnvironment }) }));
 vi.mock("./environment-config.js", () => ({ resolveEnvironmentDriverConfigForRuntime: state.resolveEnvironment }));
 vi.mock("@paperclipai/adapter-utils/ssh", () => ({ runSshCommand: state.ssh }));
-import { agentRunnerAvailability, resolveNewAgentRunner, resolveNewAgentRunnerForCompany } from "./agent-runner-selection.js";
+import { agentRunnerAvailability, resolveAgentRunnerTargetForCompany, resolveNewAgentRunner, resolveNewAgentRunnerForCompany } from "./agent-runner-selection.js";
 const target = { driver: "local", platform: "linux", architecture: "x64" };
 
 describe("server-owned Codex runner selection", () => {
@@ -32,6 +32,7 @@ describe("server-owned Codex runner selection", () => {
     expect(() => resolveNewAgentRunner({ ...input, runner: "paperclip" })).toThrow("unavailable");
     const saved = { adapterType: "paperclip_runner", adapterConfig: { provider: "codex", model: "gpt-5.6-sol" }, target: input.target };
     expect(resolveNewAgentRunner(saved)).toEqual({ adapterType: saved.adapterType, adapterConfig: saved.adapterConfig });
+    expect(resolveNewAgentRunner({ ...saved, runner: "paperclip" })).toEqual({ adapterType: saved.adapterType, adapterConfig: saved.adapterConfig });
   });
   it("automatically keeps unsupported targets and active external overrides legacy", () => {
     const input = { adapterType: "codex_local", target: { driver: "local", platform: "win32", architecture: "x64" } };
@@ -69,6 +70,23 @@ describe("server-owned Codex runner selection", () => {
     const result = await resolveNewAgentRunnerForCompany({} as never, "company", { adapterType: "codex_local", defaultEnvironmentId: null });
     expect(state.getEnvironment).toHaveBeenCalledWith("default"); expect(state.bindings).toHaveBeenCalledWith("default");
     expect(result.adapterType).toBe("codex_local");
+  });
+  it.each([
+    ["Linux\nx86_64\n", "paperclip", "paperclip_runner"],
+    ["Darwin\narm64\n", "legacy", "codex_local"],
+  ])("uses the same selected SSH target for discovery and saving (%s)", async (stdout, expectedRunner, expectedAdapter) => {
+    state.getEnvironment.mockResolvedValue({ id: "selected", driver: "ssh", status: "active", config: {} });
+    state.ssh.mockResolvedValue({ stdout });
+    const discoveredTarget = await resolveAgentRunnerTargetForCompany({} as never, "company", "selected");
+    expect(agentRunnerAvailability("codex_local", discoveredTarget).defaultRunner).toBe(expectedRunner);
+    const saved = await resolveNewAgentRunnerForCompany({} as never, "company", { adapterType: "codex_local", defaultEnvironmentId: "selected" });
+    expect(saved.adapterType).toBe(expectedAdapter);
+  });
+  it("preserves recorded explicit native execution without rechecking creation defaults", async () => {
+    const recorded = { adapterType: "paperclip_runner", adapterConfig: { provider: "codex", model: "gpt-5.6-sol" }, runner: "paperclip" as const };
+    expect(await resolveNewAgentRunnerForCompany({} as never, "company", recorded)).toEqual({ adapterType: recorded.adapterType, adapterConfig: recorded.adapterConfig });
+    expect(state.getEnvironment).not.toHaveBeenCalled();
+    expect(state.ssh).not.toHaveBeenCalled();
   });
   it("does not infer a sandbox image architecture from its driver", async () => {
     state.getEnvironment.mockResolvedValue({ id: "sandbox", driver: "sandbox", status: "active", config: { provider: "daytona" } });

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { and, eq } from "drizzle-orm";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   activityLog,
   agents,
@@ -38,8 +38,17 @@ const SEED = {
 
 describeEmbeddedPostgres("POST /api/companies/:companyId/onboarding-seed", () => {
   const ctx = useEmbeddedPostgres("onboarding-seed-route");
+  let runnerSelectionSpy: { mockRestore(): void } | undefined;
+
+  beforeEach(async () => {
+    // Exercise real runner policy on the qualified Linux release target.
+    const selection = await import("../services/agent-runner-selection.js");
+    runnerSelectionSpy = vi.spyOn(selection, "resolveNewAgentRunnerForCompany").mockImplementation(async (_db, _companyId, input) =>
+      selection.resolveNewAgentRunner({ ...input, target: { driver: "local", platform: "linux", architecture: "x64" } }));
+  });
 
   afterEach(async () => {
+    runnerSelectionSpy?.mockRestore();
     await ctx.db.delete(activityLog);
     await ctx.db.delete(companyOnboardingSeeds);
     await ctx.db.delete(issues);

@@ -5624,7 +5624,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           const desiredSkills = (manifestAgent.skills ?? []).map((skillRef) => desiredSkillRefMap.get(skillRef) ?? skillRef);
           const existingImportAgent = planAgent.action === "update" && planAgent.existingAgentId
             ? await agents.getById(planAgent.existingAgentId) : null;
-          const selectedAdapterType = adapterOverride?.adapterType ?? manifestAgent.adapterType;
+          let selectedAdapterType = adapterOverride?.adapterType ?? manifestAgent.adapterType;
           const selectedHarness = agentHarnessType(selectedAdapterType, baseAdapterConfig);
           // Config-only edits keep the package's explicit runner or an existing
           // agent's execution. A genuinely changed harness selects its default.
@@ -5636,6 +5636,18 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
             if (runner === undefined && existingImportAgent
               && selectedHarness === agentHarnessType(existingImportAgent.adapterType, existingImportAgent.adapterConfig)) {
               runner = agentRunner(existingImportAgent.adapterType);
+            }
+          }
+          // The picker sends harness identity for config edits. Keep a saved
+          // native profile, including on a source-built unqualified platform.
+          const retainedNative = runner === "paperclip" && selectedHarness === "codex_local"
+            ? [manifestAgent, existingImportAgent].find((agent) => agent?.adapterType === "paperclip_runner"
+              && agentHarnessType(agent.adapterType, agent.adapterConfig) === selectedHarness)
+            : undefined;
+          if (retainedNative) {
+            selectedAdapterType = "paperclip_runner";
+            for (const field of ["provider", "acpxAgent", "acpxMode"]) {
+              if (retainedNative.adapterConfig[field] !== undefined) baseAdapterConfig[field] = retainedNative.adapterConfig[field];
             }
           }
           const normalizedAdapter = await prepareImportedAgentAdapter(

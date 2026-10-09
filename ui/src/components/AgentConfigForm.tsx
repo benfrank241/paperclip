@@ -609,7 +609,19 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const effectiveConfig = isCreate ? props.values.adapterSchemaValues ?? {} : { ...config, ...overlay.adapterConfig };
   const harnessType = agentHarnessType(adapterType, effectiveConfig);
   const isCodexHarness = harnessType === "codex_local";
-  const runnerDiscovery = useQuery({ queryKey: queryKeys.adapters.all, queryFn: adaptersApi.list });
+  const rawCurrentDefaultEnvironmentId = isCreate
+    ? props.values.defaultEnvironmentId ?? ""
+    : eff("identity", "defaultEnvironmentId", props.agent.defaultEnvironmentId ?? "");
+  const currentDefaultEnvironmentId = useMemo(() => {
+    if (!rawCurrentDefaultEnvironmentId) return "";
+    const selected = environments.find((environment) => environment.id === rawCurrentDefaultEnvironmentId) ?? null;
+    return selected?.driver === "local" ? "" : rawCurrentDefaultEnvironmentId;
+  }, [environments, rawCurrentDefaultEnvironmentId]);
+  const runnerDiscovery = useQuery({
+    queryKey: queryKeys.adapters.availability(selectedCompanyId, rawCurrentDefaultEnvironmentId || null),
+    queryFn: () => adaptersApi.list({ companyId: selectedCompanyId!, environmentId: rawCurrentDefaultEnvironmentId || null }),
+    enabled: Boolean(selectedCompanyId),
+  });
   const codexRunnerAvailability = runnerDiscovery.data?.find(item => item.type === "codex_local");
   const runner: AgentRunnerChoice = isCreate ? props.values.runner ?? "auto" : overlay.runner ?? agentRunner(adapterType);
   const fieldsAdapterType = isCodexHarness
@@ -784,14 +796,6 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     invalidateUserSecretDefinitions();
   };
 
-  const rawCurrentDefaultEnvironmentId = isCreate
-    ? val!.defaultEnvironmentId ?? ""
-    : eff("identity", "defaultEnvironmentId", props.agent.defaultEnvironmentId ?? "");
-  const currentDefaultEnvironmentId = useMemo(() => {
-    if (!rawCurrentDefaultEnvironmentId) return "";
-    const selected = environments.find((environment) => environment.id === rawCurrentDefaultEnvironmentId) ?? null;
-    return selected?.driver === "local" ? "" : rawCurrentDefaultEnvironmentId;
-  }, [environments, rawCurrentDefaultEnvironmentId]);
   const currentDefaultEnvironment = useMemo(
     () => environments.find((environment) => environment.id === currentDefaultEnvironmentId) ?? null,
     [currentDefaultEnvironmentId, environments],
@@ -1149,7 +1153,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     resetTestEnvironmentRef.current();
     setTestActionError(null);
     clearClaudeLoginClaimRef.current();
-  }, [adapterType, runner, effectiveLoginEnvironmentId]);
+  }, [adapterType, runner, effectiveLoginEnvironmentId, runner === "auto" ? codexRunnerAvailability?.defaultRunner : undefined]);
 
   // Show the login affordance only for a current sandbox adapter that declares a
   // login capability, and whose most recent Test result carries the canonical
@@ -1889,6 +1893,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               >
                 <div className="space-y-3">
                   {isCodexHarness && <CodexRunnerSelect value={runner}
+                    pending={runnerDiscovery.isFetching} error={runnerDiscovery.error?.message} onRetry={() => { void runnerDiscovery.refetch(); }}
                     defaultRunner={codexRunnerAvailability?.defaultRunner}
                     supportedRunners={codexRunnerAvailability?.supportedRunners}
                     onChange={next => isCreate ? set!({ runner: next }) : setOverlay(prev => ({ ...prev, runner: next }))} />}

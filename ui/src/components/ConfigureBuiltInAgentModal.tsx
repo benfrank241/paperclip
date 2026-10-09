@@ -71,7 +71,8 @@ export function ConfigureBuiltInAgentModal({
     () => state.agent && agentHarnessType(state.agent.adapterType, state.agent.adapterConfig) === "codex_local" ? "codex_local" : state.agent?.adapterType ?? defaultAdapterType(state),
   );
   const [runner, setRunner] = useState<AgentRunnerChoice | undefined>();
-  const adapters = useQuery({ queryKey: queryKeys.adapters.all, queryFn: adaptersApi.list, enabled: open });
+  const environmentId = state.agent?.defaultEnvironmentId ?? null;
+  const adapters = useQuery({ queryKey: queryKeys.adapters.availability(companyId, environmentId), queryFn: () => adaptersApi.list({ companyId, environmentId }), enabled: open });
   const codexAvailability = adapters.data?.find(item => item.type === "codex_local");
   const [model, setModel] = useState<string>(() => {
     const config = state.agent?.adapterConfig;
@@ -185,6 +186,7 @@ export function ConfigureBuiltInAgentModal({
           {adapterType === "codex_local" && <details className="space-y-3">
             <summary className="cursor-pointer text-sm text-muted-foreground">Advanced</summary>
             <CodexRunnerSelect value={runner ?? (state.agent ? agentRunner(state.agent.adapterType) : "auto")}
+              pending={adapters.isFetching} error={adapters.error?.message} onRetry={() => { void adapters.refetch(); }}
               defaultRunner={codexAvailability?.defaultRunner} supportedRunners={codexAvailability?.supportedRunners}
               onChange={setRunner} />
           </details>}

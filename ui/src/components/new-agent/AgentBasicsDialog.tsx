@@ -65,7 +65,7 @@ export function AgentBasicsDialog({
     error,
   } = useQuery({
     queryKey: queryKeys.adapters.all,
-    queryFn: adaptersApi.list,
+    queryFn: () => adaptersApi.list(),
     enabled: open,
   });
   const choices = (adapters ?? []).filter(

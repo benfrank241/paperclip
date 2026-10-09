@@ -601,7 +601,6 @@ function OnboardingWizardInner({
   );
   const [runner, setRunner] = useState<AgentRunnerChoice>(() => saved?.runner === "legacy" || saved?.runner === "paperclip"
     ? saved.runner : saved?.adapterType === "paperclip_runner" && (saved?.runnerProvider === undefined || saved?.runnerProvider === "codex") ? "paperclip" : "auto");
-  const runnerDiscovery = useQuery({ queryKey: queryKeys.adapters.all, queryFn: adaptersApi.list, enabled: effectiveOnboardingOpen });
   /**
    * Whether a model source has been chosen, as opposed to which one
    * `adapterType` happens to hold.
@@ -986,6 +985,11 @@ function OnboardingWizardInner({
     loginEnvironmentList,
     experimentalSettingsForLogin?.enableManagedSandboxOnly,
   ]);
+  const runnerDiscovery = useQuery({
+    queryKey: queryKeys.adapters.availability(createdCompanyId, resolvedLoginEnvironmentId),
+    queryFn: () => adaptersApi.list({ companyId: createdCompanyId!, environmentId: resolvedLoginEnvironmentId }),
+    enabled: Boolean(createdCompanyId) && effectiveOnboardingOpen && step === 4,
+  });
   const resolvedLoginEnvironment = useMemo(
     () =>
       loginEnvironmentList.find((environment) => environment.id === resolvedLoginEnvironmentId) ??
@@ -1546,7 +1550,7 @@ function OnboardingWizardInner({
     setAdapterEnvResult(null);
     adapterEnvResultAppliedStoredLoginRef.current = false;
     setAdapterEnvError(null);
-  }, [step, adapterType, runner, model, command, args, url, credentialMode, apiKey, selectedSavedKey, selectedApiKey?.id, savedSubscription?.id]);
+  }, [step, adapterType, runner, model, command, args, url, credentialMode, apiKey, selectedSavedKey, selectedApiKey?.id, savedSubscription?.id, createdCompanyId, resolvedLoginEnvironmentId, runner === "auto" ? runnerDiscovery.data?.find(item => item.type === "codex_local")?.defaultRunner : undefined]);
 
   /**
    * Leaving the step puts the row back to a question.
@@ -2907,6 +2911,7 @@ function OnboardingWizardInner({
                   {sourceSelected && adapterType === "codex_local" && <details className="space-y-3">
                     <summary className="cursor-pointer text-sm text-muted-foreground">Advanced</summary>
                     <CodexRunnerSelect value={runner} disabled={loading || adapterEnvLoading}
+                      pending={runnerDiscovery.isFetching} error={runnerDiscovery.error?.message} onRetry={() => { void runnerDiscovery.refetch(); }}
                       defaultRunner={runnerDiscovery.data?.find(item => item.type === "codex_local")?.defaultRunner}
                       supportedRunners={runnerDiscovery.data?.find(item => item.type === "codex_local")?.supportedRunners}
                       onChange={setRunner} />

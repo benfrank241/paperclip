@@ -7,6 +7,16 @@ import { Readable } from "node:stream";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanyPortabilityFileEntry } from "@paperclipai/shared";
 
+const runnerTarget = vi.hoisted(() => ({ driver: "local", platform: "linux", architecture: "x64" }));
+
+vi.mock("../services/agent-runner-selection.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/agent-runner-selection.js")>();
+  // Keep selection/translation real on an explicit target, including when an
+  // existing test resets modules. Environment discovery has its own coverage.
+  return { ...actual, resolveNewAgentRunnerForCompany: vi.fn(async (...[_db, _companyId, input]: Parameters<typeof actual.resolveNewAgentRunnerForCompany>) =>
+    actual.resolveNewAgentRunner({ ...input, target: runnerTarget })) };
+});
+
 const companySvc = {
   getById: vi.fn(),
   // Async-empty default (not a bare vi.fn()): every new-company import reads
@@ -201,6 +211,8 @@ describe("company portability", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    runnerTarget.platform = "linux";
+    runnerTarget.architecture = "x64";
     agentSvc.getById.mockImplementation(async (id: string) => (await agentSvc.list()).find((agent: { id: string }) => agent.id === id) ?? null);
     instanceSettingsSvc.getExperimental.mockResolvedValue({ enableNativeRunner: false });
     managedAgentProfileSvc.requireQualified.mockResolvedValue({
@@ -6046,7 +6058,13 @@ describe("company portability", () => {
     expect(preview.plan.issuePlans).toHaveLength(0);
   });
 
-  it.each(["legacy", "paperclip"] as const)("exports the resolved %s Codex runner and preserves it on import", async (runner) => {
+  it.each([
+    { runner: "legacy", platform: "linux" },
+    { runner: "paperclip", platform: "linux" },
+    { runner: "paperclip", platform: "darwin" },
+  ] as const)("exports the resolved Codex runner and preserves it on import ($runner/$platform)", async ({ runner, platform }) => {
+    runnerTarget.platform = platform;
+    runnerTarget.architecture = platform === "darwin" ? "arm64" : "x64";
     const [fixture] = await agentSvc.list();
     agentSvc.list.mockResolvedValue([{ ...fixture, adapterType: runner === "legacy" ? "codex_local" : "paperclip_runner", adapterConfig: { ...(runner === "paperclip" ? { provider: "codex" } : {}), model: "gpt-5.4" } }]);
     const portability = companyPortabilityService({} as any);
@@ -6071,7 +6089,13 @@ describe("company portability", () => {
     expect(agentSvc.create).not.toHaveBeenCalled();
   });
 
-  it.each(["create", "update"] as const)("applies Codex defaults only to new imports without a runner (%s)", async (action) => {
+  it.each([
+    { action: "create", platform: "linux", expectedType: "paperclip_runner" },
+    { action: "update", platform: "linux", expectedType: "codex_local" },
+    { action: "create", platform: "darwin", expectedType: "codex_local" },
+  ])("applies qualified Codex defaults only to new imports without a runner ($platform/$action)", async ({ action, platform, expectedType }) => {
+    runnerTarget.platform = platform;
+    runnerTarget.architecture = platform === "darwin" ? "arm64" : "x64";
     const [fixture] = await agentSvc.list();
     agentSvc.list.mockResolvedValue([{ ...fixture, adapterType: "codex_local", adapterConfig: { model: "gpt-5.4" } }]);
     const portability = companyPortabilityService({} as any);
@@ -6081,15 +6105,18 @@ describe("company portability", () => {
     agentSvc.create.mockImplementation(async (_companyId: string, input: Record<string, unknown>) => ({ id: "agent-created", ...input }));
     agentSvc.update.mockImplementation(async (id: string, input: Record<string, unknown>) => ({ id, ...fixture, ...input }));
     await portability.importBundle({ source: { type: "inline", rootPath: exported.rootPath, files }, include: { company: false, agents: true, projects: false, issues: false }, target: { mode: "existing_company", companyId: "company-1" }, agents: "all", collisionStrategy: action === "update" ? "replace" : "rename" }, "user-1");
-    if (action === "create") expect(agentSvc.create).toHaveBeenCalledWith("company-1", expect.objectContaining({ adapterType: "paperclip_runner", adapterConfig: expect.objectContaining({ provider: "codex" }) }), { createdByUserId: "user-1" });
+    if (action === "create") expect(agentSvc.create).toHaveBeenCalledWith("company-1", expect.objectContaining({ adapterType: expectedType, adapterConfig: expect.objectContaining(expectedType === "paperclip_runner" ? { provider: "codex" } : { model: "gpt-5.4" }) }), { createdByUserId: "user-1" });
     else expect(agentSvc.update).toHaveBeenCalledWith("agent-1", expect.objectContaining({ adapterType: "codex_local", adapterConfig: expect.objectContaining({ model: "gpt-5.4" }) }));
   });
 
   it.each([
-    { existingRunner: "legacy", existingHarness: "codex_local", expectedType: "codex_local" },
-    { existingRunner: "paperclip", existingHarness: "codex_local", expectedType: "paperclip_runner" },
-    { existingRunner: "legacy", existingHarness: "claude_local", expectedType: "paperclip_runner" },
-  ])("keeps execution on same-harness replace-import edits and defaults genuine changes ($existingRunner/$existingHarness)", async ({ existingRunner, existingHarness, expectedType }) => {
+    { existingRunner: "legacy", existingHarness: "codex_local", expectedType: "codex_local", platform: "linux" },
+    { existingRunner: "paperclip", existingHarness: "codex_local", expectedType: "paperclip_runner", platform: "linux" },
+    { existingRunner: "paperclip", existingHarness: "codex_local", expectedType: "paperclip_runner", platform: "darwin" },
+    { existingRunner: "legacy", existingHarness: "claude_local", expectedType: "paperclip_runner", platform: "linux" },
+  ])("keeps execution on same-harness replace-import edits and defaults genuine changes ($existingRunner/$existingHarness/$platform)", async ({ existingRunner, existingHarness, expectedType, platform }) => {
+    runnerTarget.platform = platform;
+    runnerTarget.architecture = platform === "darwin" ? "arm64" : "x64";
     const [fixture] = await agentSvc.list();
     const existing = { ...fixture, adapterType: existingRunner === "paperclip" ? "paperclip_runner" : existingHarness, adapterConfig: { ...(existingRunner === "paperclip" ? { provider: "codex" } : {}), model: existingHarness === "codex_local" ? "gpt-5.4" : "claude-sonnet-4-6" } };
     agentSvc.list.mockResolvedValue([existing]);

@@ -36,8 +36,10 @@ Docker materialization, Git installer, or extra login isolation wholesale.
 ## Current slice: Codex defaults
 
 Authorized 2026-10-09. Canonical branch: `codex/codex-runner-default`.
-Frozen master base: `4fb1ab53a` (includes both prerequisite merges).
-Canonical PR and tested revision: pending preparation.
+Master base: `57e977be7` (includes both prerequisite merges and Pi integration).
+Canonical PR: [draft #15683](https://github.com/paperclipai/paperclip/pull/15683).
+Initial CI candidate: `8ce217b71`; final source freeze follows scoped discovery
+and explicit-native import preservation checks.
 Preview: [isolated Codex QA](http://127.0.0.1:3124), normal dev supervisor,
 separate empty database. Current-head live evidence is pending the source freeze
 and verified binary provenance; older services and artifacts are not proof.
@@ -77,7 +79,7 @@ Claude's explicit native fixture is unchanged until its later default PR.
 | Production create/edit/onboarding UI and stories | UI worker | Implemented; 339 affected tests, UI typecheck and token gates pass; story evidence in progress |
 | Built-ins, plugins, approvals, imports/exports, CLI | Creation-path worker | Implemented; 102 portability, 8 approval, 3 CLI and 3 built-in unit checks pass; 72 DB checks require Linux |
 | Execution/dev gate, E2E gaps, packaging, live journeys | Lead | 28 runtime-selection and 122 onboarding/catalog support checks pass; actual journeys pending |
-| Full CI and final review | Lead | Run on frozen final candidate |
+| Full CI and final review | Lead | Initial Linux CI and Greptile running on `8ce217b71`; final-head verification pending |
 | Local API/subscription task + follow-up | Lead | Credential/runtime identity inventory; unverified on this branch |
 | Managed staging API/subscription onboarding | Lead | Exact-source preview/artifact and budget qualification pending |
 | Shipped npm/Docker/cloud artifacts | Lead | Reuse existing hosted checks; prerequisite packaging proof is historical |
@@ -118,3 +120,18 @@ Next action: finish core integration checks, commit and push the candidate,
 then run existing Linux CI/install checks and bounded actual journeys. Preserve
 failed attempts and costs. Unrelated findings and remaining harness qualification
 belong to later slices.
+
+Post-rebase UI checks pass (126 cases, typecheck, token gates). Product E2E
+catalog/onboarding support passes (122 cases), plus 47 confirmation fixture
+checks and E2E noemit. Existing Pi companion/executor controls pass (26 and 34
+cases); core selection/setup passes 87 cases and transport passes six.
+Production Storybook build and 26 desktop/six mobile captures were completed
+before the Pi rebase; they are component evidence, not live execution proof.
+Both final integration gaps are implemented: discovery resolves the selected
+environment through the same helper as saving, and explicit native export/import
+profiles remain valid on macOS while new automatic defaults stay legacy.
+Scoped discovery/authorization passes 63 checks. UI context and recovery checks
+pass 280 cases plus three final regressions. Missing discovery metadata shows
+loading or the server error with Retry; explicit Legacy remains available.
+Final portability checks pass 105 cases; approval, built-in asset and CLI unit
+controls pass eight, three and three. The 72 skipped DB cases still need Linux.

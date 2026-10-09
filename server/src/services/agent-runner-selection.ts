@@ -8,7 +8,7 @@ import { forbidden, unprocessable } from "../errors.js";
 import { runSshCommand } from "@paperclipai/adapter-utils/ssh";
 import { resolveEnvironmentDriverConfigForRuntime } from "./environment-config.js";
 
-type RunnerTarget = { driver: string; platform?: string; architecture?: string };
+export type RunnerTarget = { driver: string; platform?: string; architecture?: string };
 export interface AgentRunnerSelection {
   adapterType?: string | null;
   adapterConfig?: Record<string, unknown>;
@@ -39,7 +39,7 @@ export function resolveNewAgentRunner(input: AgentRunnerSelection): { adapterTyp
   const native = adapterType === "paperclip_runner";
   if (adapterType === "codex_local" && getDisabledAdapterTypes().includes(adapterType)) throw unprocessable("Codex is disabled on this instance. Enable its adapter or choose another harness.", { code: "agent_runner_unavailable" });
   // Explicit saved native profiles (including historical provider omission) retain execution.
-  if (native && (input.runner === undefined || (harness !== "codex_local" && input.runner !== "legacy"))) return { adapterType, adapterConfig: normalizeLegacyRunnerProvider(config) };
+  if (native && (input.runner === undefined || input.runner === "paperclip" || (harness !== "codex_local" && input.runner !== "legacy"))) return { adapterType, adapterConfig: normalizeLegacyRunnerProvider(config) };
   const availability = agentRunnerAvailability(harness, input.target);
   const choice = input.runner ?? "auto";
   const useNative = choice === "paperclip" || (choice === "auto" && availability.defaultRunner === "paperclip");
@@ -79,13 +79,19 @@ export function resolveNewAgentRunner(input: AgentRunnerSelection): { adapterTyp
 /** Use the execution environment selected by dispatch, without starting a provider. */
 export async function resolveNewAgentRunnerForCompany(db: Db, companyId: string, input: AgentRunnerSelection & { defaultEnvironmentId?: string | null }) {
   if (agentHarnessType(input.adapterType ?? "process", input.adapterConfig) !== "codex_local"
-    || input.runner === "legacy" || (input.adapterType === "paperclip_runner" && input.runner === undefined)) return resolveNewAgentRunner(input);
+    || input.runner === "legacy" || (input.adapterType === "paperclip_runner" && (input.runner === undefined || input.runner === "paperclip"))) return resolveNewAgentRunner(input);
+  const target = await resolveAgentRunnerTargetForCompany(db, companyId, input.defaultEnvironmentId);
+  return resolveNewAgentRunner({ ...input, target });
+}
+
+/** Shared creation/discovery target selection; no provider turn or environment lease. */
+export async function resolveAgentRunnerTargetForCompany(db: Db, companyId: string, defaultEnvironmentId?: string | null): Promise<RunnerTarget> {
   await waitForExternalAdapters();
   const { instanceSettingsService } = await import("./instance-settings.js");
   const { environmentService } = await import("./environments.js");
   const settings = await instanceSettingsService(db).get();
   const envs = environmentService(db);
-  const environmentId = input.defaultEnvironmentId ?? settings.defaultEnvironmentId;
+  const environmentId = defaultEnvironmentId ?? settings.defaultEnvironmentId;
   let environment = environmentId ? await envs.getById(environmentId) : null;
   if (settings.experimental?.enableManagedSandboxOnly && (!environment || environment.driver === "local")) {
     environment = await envs.findManagedSandboxEnvironment(companyId);
@@ -114,5 +120,5 @@ export async function resolveNewAgentRunnerForCompany(db: Db, companyId: string,
     const [os = "", arch = ""] = output.trim().split(/\r?\n/);
     target = { driver, platform: os === "Linux" ? "linux" : os === "Darwin" ? "darwin" : "unknown", architecture: arch === "x86_64" ? "x64" : ["aarch64", "arm64"].includes(arch) ? "arm64" : arch };
   }
-  return resolveNewAgentRunner({ ...input, target });
+  return target;
 }

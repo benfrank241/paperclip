@@ -659,11 +659,20 @@ export function pluginManagedAgentService(
       const adapterType = await resolveManagedAdapterType(companyId, declaration);
       const defaults = declarationPatch(declaration, { adapterType });
       // A Codex reset keeps its selected runner; other harness reset behavior is unchanged.
+      const sameCodexHarness = adapterType === "codex_local" && agentHarnessType(reconciled.agent.adapterType, reconciled.agent.adapterConfig) === adapterType;
+      const retainedNative = sameCodexHarness && reconciled.agent.adapterType === "paperclip_runner";
+      const resetAdapterConfig = { ...defaults.adapterConfig };
+      if (retainedNative) {
+        for (const field of ["provider", "acpxAgent", "acpxMode"]) {
+          if (reconciled.agent.adapterConfig[field] !== undefined) resetAdapterConfig[field] = reconciled.agent.adapterConfig[field];
+        }
+      }
       const execution = await resolveNewAgentRunnerForCompany(db, companyId, {
         ...defaults,
+        adapterType: retainedNative ? reconciled.agent.adapterType : adapterType,
+        adapterConfig: resetAdapterConfig,
         defaultEnvironmentId: reconciled.agent.defaultEnvironmentId,
-        runner: adapterType === "codex_local" && agentHarnessType(reconciled.agent.adapterType, reconciled.agent.adapterConfig) === adapterType
-          ? agentRunner(reconciled.agent.adapterType) : undefined,
+        runner: sameCodexHarness ? agentRunner(reconciled.agent.adapterType) : undefined,
       });
       // Reset content through the canonical CAS path before changing defaults.
       // A conflict must leave the existing adapter configuration untouched.
