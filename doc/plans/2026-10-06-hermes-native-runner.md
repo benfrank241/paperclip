@@ -1938,3 +1938,30 @@ unattached 56-byte segments from this task's exited PostgreSQL processes are
 released. After closed-process and empty open-file checks, disposable test
 homes and caches are removed; logs, screenshots and required runtime assets
 remain. No local Docker or Rust build runs.
+
+### 2026-10-09 bounded manual selection and cold CLI checks
+
+Published source `59c74872981f26196672a21ef3b8cbc643609055` passes the full
+cloud Rust lane and native fixture run `37917225876` on Mac arm64 and Linux
+amd64. The original full-prefix oracle and the new subsequent-message identity
+case pass. The Rust subtree is `81c718891ec50eada31a03423dd2661f3eea4a9c`.
+This remains deterministic native proof without paid or Daytona execution.
+
+Fresh full-shard CI exposes an announcement covering the Agents link. The
+fixture now dismisses it through its normal button before navigation. Review
+also exposes a manual-selection guard that remains active on later history
+navigation. A new history oracle reproduces the sidebar/page mismatch. The
+guard now yields only on the render where manual selection changes. All ten
+browser cases then pass, including return navigation to the resolved company's
+agent. The final history-selection screenshot is visually inspected. Failed
+fixture and product attempts retain their original verdicts.
+
+The dense ZIP test constructs the same DEFLATE fixture with a CRC lookup
+table, avoiding eight per-byte loop iterations across the 64 MB input. Its
+original five-second deadline and all assertions remain. The cold source CLI's
+health wait is bounded at 45 seconds within its existing 60-second setup hook.
+All 18 focused CLI tests pass, including real PostgreSQL and CLI import/export.
+The earlier cloud cold-start and ZIP timeouts remain failed. A separate
+foundation signoff-policy cancellation/reconciliation failure still needs
+qualification; the other current stack heads pass that shard. Full CI, review,
+browser controls, paid credentials and actual Daytona remain required.
